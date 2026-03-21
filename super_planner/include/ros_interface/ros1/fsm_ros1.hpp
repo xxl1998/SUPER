@@ -41,7 +41,7 @@ namespace fsm {
     class FsmRos1 : public Fsm {
         ros::NodeHandle nh_;
         ros::Subscriber goal_sub_;
-        ros::Publisher cmd_pub, mpc_cmd_pub_, path_pub_;
+        ros::Publisher cmd_pub, mpc_cmd_pub_, path_pub_, goal_pub_;
         ros::Timer execution_timer_, replan_timer_, cmd_timer_;
         quadrotor_msgs::PositionCommand pid_cmd_;
         rog_map::ROGMapROS::Ptr map_ptr_;
@@ -281,6 +281,7 @@ namespace fsm {
             cmd_pub = nh_.advertise<quadrotor_msgs::PositionCommand>(cfg_.cmd_topic, 10);
             mpc_cmd_pub_ = nh_.advertise<quadrotor_msgs::PolynomialTrajectory>(cfg_.mpc_cmd_topic, 10);
             path_pub_ = nh_.advertise<nav_msgs::Path>("fsm/path", 100);
+            goal_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/goal_super", 10);
 
             int cmd_cnt = 0;
 
@@ -337,6 +338,18 @@ namespace fsm {
             getOnePositionCommand(pid_cmd_, traj_finish_);
             mpc_cmd_pub_.publish(heartbeat);
             cmd_pub.publish(pid_cmd_);
+
+            geometry_msgs::PoseStamped goal_msg;
+            goal_msg.header = pid_cmd_.header;
+            goal_msg.pose.position = pid_cmd_.position;
+            const Eigen::Quaterniond goal_q = eulerToQuaternion(pid_cmd_.attitude.x, pid_cmd_.attitude.y,
+                                                                pid_cmd_.attitude.z);
+            goal_msg.pose.orientation.x = goal_q.x();
+            goal_msg.pose.orientation.y = goal_q.y();
+            goal_msg.pose.orientation.z = goal_q.z();
+            goal_msg.pose.orientation.w = goal_q.w();
+            goal_pub_.publish(goal_msg);
+
             if (traj_finish_) {
                 cout << GREEN << " -- [Fsm] Traj finish." << RESET << endl;
                 if (closeToGoal(0.1)) {
