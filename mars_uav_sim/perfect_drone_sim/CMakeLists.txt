@@ -52,3 +52,14 @@ add_executable(perfect_drone
 target_link_libraries(perfect_drone
         ${THIRD_PARTY}
         )
+
+add_executable(so3_quadrotor_sim
+  src/so3_quadrotor_sim.cpp
+)
+target_link_libraries(so3_quadrotor_sim
+  ${THIRD_PARTY}
+)
+add_dependencies(so3_quadrotor_sim
+  ${catkin_EXPORTED_TARGETS}
+  quadrotor_msgs_generate_messages_cpp
+)

@@ -61,11 +61,13 @@ include_directories(
 #
 add_message_files(
         FILES
+        AuxCommand.msg
         PositionCommand.msg
         MpcPositionCommand.msg
         PolynomialTrajectory.msg
         TrakingPerformance.msg
         QuadrotorState.msg
+        SO3Command.msg
 )
 
 generate_messages(

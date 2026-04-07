@@ -1,0 +1,25 @@
+# so3 quadrotor
+simulation_rate: 1000
+odom_rate: 400
+g: 9.81
+mass: 0.98
+Ixx: 2.64e-3
+Iyy: 2.64e-3
+Izz: 4.96e-3
+kf: 8.98132e-9
+prop_radius: 0.062
+arm_length: 0.26
+motor_time_constant: 0.03333
+max_rpm: 35000.0
+min_rpm: 1200.0
+
+# so3 controller
+gains_rot_x  : 1.5
+gains_rot_y  : 1.5
+gains_rot_z  : 1.0
+gains_ang_x  : 0.13
+gains_ang_y  : 0.13
+gains_ang_z  : 0.1
+corrections_z: 0.0
+corrections_r: 0.0
+corrections_p: 0.0
