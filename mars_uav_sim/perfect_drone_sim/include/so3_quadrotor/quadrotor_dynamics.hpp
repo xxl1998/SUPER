@@ -18,6 +18,20 @@ struct Config {
 struct Control {
   double rpm[4];
 };
+struct BodyRateCmd {
+  // Desired body angular rate [rad/s].
+  float body_rate[3] = {0.0, 0.0, 0.0};
+  // Collective thrust along the body z-axis [N].
+  float thrust = 0.0;
+  // Angular-rate feedback gains.
+  float kOm[3] = {0.0, 0.0, 0.0};
+  // Optional desired body angular acceleration feedforward [rad/s^2].
+  float body_rate_dot[3] = {0.0, 0.0, 0.0};
+  // Optional additional torque feedforward [N*m].
+  float torque_ff[3] = {0.0, 0.0, 0.0};
+  // Optional model correction terms, consistent with Cmd.
+  float corrections[3] = {0,0,0};
+};
 struct Cmd {
   float force[3] = {0,0,0};
   float qx, qy, qz, qw;
@@ -219,6 +233,72 @@ class Quadrotor {
     w_sq[1] = force / (4 * kf) + M2 / (2 * d * kf) + M3 / (4 * km);
     w_sq[2] = force / (4 * kf) + M1 / (2 * d * kf) - M3 / (4 * km);
     w_sq[3] = force / (4 * kf) - M1 / (2 * d * kf) - M3 / (4 * km);
+
+    Control control;
+    for (int i = 0; i < 4; i++) {
+      if (w_sq[i] < 0) w_sq[i] = 0;
+      control.rpm[i] = sqrtf(w_sq[i]);
+    }
+    return control;
+  }
+
+  // Convert an MPC-style body-rate and thrust command into motor RPM.
+  inline Control getBodyRateControl(const BodyRateCmd& cmd) {
+    double         kf = config_.kf - cmd.corrections[0];
+    double         km = config_.km / kf * kf;
+    double          d = config_.arm_length;
+    Eigen::Matrix3f J = config_.J.cast<float>();
+    float     I[3][3] = { { J(0, 0), J(0, 1), J(0, 2) },
+                          { J(1, 0), J(1, 1), J(1, 2) },
+                          { J(2, 0), J(2, 1), J(2, 2) } };
+
+    const float Om1 = state_.omega(0);
+    const float Om2 = state_.omega(1);
+    const float Om3 = state_.omega(2);
+
+    const float des_Om1 = cmd.body_rate[0];
+    const float des_Om2 = cmd.body_rate[1];
+    const float des_Om3 = cmd.body_rate[2];
+
+    // Angular-rate tracking error: e_Omega = Omega - Omega_d.
+    const float eOm1 = Om1 - des_Om1;
+    const float eOm2 = Om2 - des_Om2;
+    const float eOm3 = Om3 - des_Om3;
+
+    // Rigid-body coupling term: Omega x (J * Omega).
+    const float in1 = Om2 * (I[2][0] * Om1 + I[2][1] * Om2 + I[2][2] * Om3) -
+                      Om3 * (I[1][0] * Om1 + I[1][1] * Om2 + I[1][2] * Om3);
+    const float in2 = Om3 * (I[0][0] * Om1 + I[0][1] * Om2 + I[0][2] * Om3) -
+                      Om1 * (I[2][0] * Om1 + I[2][1] * Om2 + I[2][2] * Om3);
+    const float in3 = Om1 * (I[1][0] * Om1 + I[1][1] * Om2 + I[1][2] * Om3) -
+                      Om2 * (I[0][0] * Om1 + I[0][1] * Om2 + I[0][2] * Om3);
+
+    // Feedforward inertia term: J * dot(Omega_d).
+    const float J_Omdot1 = I[0][0] * cmd.body_rate_dot[0] +
+                           I[0][1] * cmd.body_rate_dot[1] +
+                           I[0][2] * cmd.body_rate_dot[2];
+    const float J_Omdot2 = I[1][0] * cmd.body_rate_dot[0] +
+                           I[1][1] * cmd.body_rate_dot[1] +
+                           I[1][2] * cmd.body_rate_dot[2];
+    const float J_Omdot3 = I[2][0] * cmd.body_rate_dot[0] +
+                           I[2][1] * cmd.body_rate_dot[1] +
+                           I[2][2] * cmd.body_rate_dot[2];
+
+    // Angular-rate controller:
+    //   M = -K_Omega * (Omega - Omega_d) + Omega x (J * Omega)
+    //       + J * dot(Omega_d) + tau_ff
+    const float M1 = -cmd.kOm[0] * eOm1 + in1 + J_Omdot1 + cmd.torque_ff[0];
+    const float M2 = -cmd.kOm[1] * eOm2 + in2 + J_Omdot2 + cmd.torque_ff[1];
+    const float M3 = -cmd.kOm[2] * eOm3 + in3 + J_Omdot3 + cmd.torque_ff[2];
+
+    // Mixer for the '+' quadrotor layout:
+    //   [T, Mx, My, Mz] -> [Omega_1^2, ..., Omega_4^2].
+    const float thrust = cmd.thrust > 0.0f ? cmd.thrust : 0.0f;
+    float w_sq[4];
+    w_sq[0] = thrust / (4 * kf) - M2 / (2 * d * kf) + M3 / (4 * km);
+    w_sq[1] = thrust / (4 * kf) + M2 / (2 * d * kf) + M3 / (4 * km);
+    w_sq[2] = thrust / (4 * kf) + M1 / (2 * d * kf) - M3 / (4 * km);
+    w_sq[3] = thrust / (4 * kf) - M1 / (2 * d * kf) - M3 / (4 * km);
 
     Control control;
     for (int i = 0; i < 4; i++) {

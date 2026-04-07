@@ -1,4 +1,5 @@
 #include <geometry_msgs/PoseStamped.h>
+#include <mavros_msgs/AttitudeTarget.h>
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
 #include <pcl_conversions/pcl_conversions.h>
@@ -14,6 +15,7 @@
 #include <visualization_msgs/MarkerArray.h>
 
 #include <Eigen/Dense>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -42,6 +44,8 @@ using std::vector;
 class SimulatorConfig {
  public:
   std::string mesh_resource;
+  std::string position_cmd_topic;
+  std::string body_rate_cmd_topic;
   Eigen::Vector3d init_pos;
   double init_yaw;
   double sensing_rate;
@@ -53,6 +57,9 @@ class SimulatorConfig {
     loader.LoadParam("mesh_resource", mesh_resource,
                      std::string("package://perfect_drone_sim/meshes/f250.dae"),
                      false);
+    loader.LoadParam("position_cmd_topic", position_cmd_topic, std::string(""));
+    loader.LoadParam("body_rate_cmd_topic", body_rate_cmd_topic,
+                     std::string(""));
     loader.LoadParam("init_position/x", init_pos.x(), 0.0);
     loader.LoadParam("init_position/y", init_pos.y(), 0.0);
     loader.LoadParam("init_position/z", init_pos.z(), 1.5);
@@ -142,9 +149,34 @@ class PerfectDrone {
     quadrotor_cfg_ = So3QuadrotorConfig(CONFIG_FILE_DIR("so3_quadrotor.yaml"));
 
     render_ptr_ = std::make_shared<marsim::MarsimRender>(cfg_path);
-    cmd_sub_ =
-        nh_.subscribe("/planning/pos_cmd", 100, &PerfectDrone::cmdCallback,
-                      this, ros::TransportHints().tcpNoDelay());
+    if (!simu_cfg_.position_cmd_topic.empty() &&
+        !simu_cfg_.body_rate_cmd_topic.empty()) {
+      cout << " -- [PerfectDrone] Invalid command topic configuration."
+           << " Both position_cmd_topic and body_rate_cmd_topic are set."
+           << " position_cmd_topic: " << simu_cfg_.position_cmd_topic
+           << ", body_rate_cmd_topic: " << simu_cfg_.body_rate_cmd_topic
+           << endl;
+      std::exit(EXIT_FAILURE);
+    } else if (simu_cfg_.position_cmd_topic.empty() &&
+               simu_cfg_.body_rate_cmd_topic.empty()) {
+      cout << " -- [PerfectDrone] Invalid command topic configuration."
+           << " Both position_cmd_topic and body_rate_cmd_topic are not set."
+           << " position_cmd_topic: " << simu_cfg_.position_cmd_topic
+           << ", body_rate_cmd_topic: " << simu_cfg_.body_rate_cmd_topic
+           << endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (!simu_cfg_.position_cmd_topic.empty()) {
+      cmd_sub_ = nh_.subscribe(simu_cfg_.position_cmd_topic, 100,
+                               &PerfectDrone::cmdCallback, this,
+                               ros::TransportHints().tcpNoDelay());
+    }
+    if (!simu_cfg_.body_rate_cmd_topic.empty()) {
+      body_rate_cmd_sub_ =
+          nh_.subscribe(simu_cfg_.body_rate_cmd_topic, 100,
+                        &PerfectDrone::bodyRateCmdCallback, this,
+                        ros::TransportHints().tcpNoDelay());
+    }
     odom_pub_ = nh_.advertise<nav_msgs::Odometry>("/lidar_slam/odom", 100);
     imu_pub_ = nh_.advertise<sensor_msgs::Imu>("imu", 10);
     pose_pub_ =
@@ -197,6 +229,13 @@ class PerfectDrone {
     cmd_.qx = quat.x();
     cmd_.qy = quat.y();
     cmd_.qz = quat.z();
+    body_rate_cmd_.thrust = config.mass * config.g;
+    body_rate_cmd_.kOm[0] = quadrotor_cfg_.gains_ang_x;
+    body_rate_cmd_.kOm[1] = quadrotor_cfg_.gains_ang_y;
+    body_rate_cmd_.kOm[2] = quadrotor_cfg_.gains_ang_z;
+    body_rate_cmd_.corrections[0] = quadrotor_cfg_.corrections_z;
+    body_rate_cmd_.corrections[1] = quadrotor_cfg_.corrections_r;
+    body_rate_cmd_.corrections[2] = quadrotor_cfg_.corrections_p;
 
     // controller init
     // init target position and yaw when no command received
@@ -275,6 +314,7 @@ class PerfectDrone {
  private:
   nav_msgs::Path path_;
   ros::Subscriber cmd_sub_;
+  ros::Subscriber body_rate_cmd_sub_;
   ros::Publisher odom_pub_, imu_pub_, robot_pub_, pose_pub_, path_pub_,
       global_pc_pub_, local_pc_pub_, vel_pub_;
   ros::Timer odom_pub_timer_;
@@ -289,6 +329,7 @@ class PerfectDrone {
   sensor_msgs::Imu imu_;
   std::string mesh_resource_;
   quadrotor_msgs::SO3Command so3cmd_;
+  so3_quadrotor::BodyRateCmd body_rate_cmd_;
   bool position_cmd_received_flag_ = false;
   Eigen::Vector3d des_pos_;
   double des_yaw_;
@@ -312,6 +353,13 @@ class PerfectDrone {
     cmd_.corrections[2] = cmd_msg.aux.angle_corrections[1];
     cmd_.current_yaw = cmd_msg.aux.current_yaw;
     cmd_.use_external_yaw = cmd_msg.aux.use_external_yaw;
+  }
+
+  void bodyRateCmdCallback(const mavros_msgs::AttitudeTargetConstPtr& msg) {
+    body_rate_cmd_.body_rate[0] = msg->body_rate.x;
+    body_rate_cmd_.body_rate[1] = msg->body_rate.y;
+    body_rate_cmd_.body_rate[2] = msg->body_rate.z;
+    body_rate_cmd_.thrust = msg->thrust;
   }
 
   void controller_timer_callback(const ros::TimerEvent& event) {
@@ -374,7 +422,11 @@ class PerfectDrone {
 
   void quadrotor_timer_callback(const ros::TimerEvent& event) {
     auto last_control = control_;
-    control_ = quadrotorPtr_->getControl(cmd_);
+    if (!simu_cfg_.body_rate_cmd_topic.empty()) {
+      control_ = quadrotorPtr_->getBodyRateControl(body_rate_cmd_);
+    } else {
+      control_ = quadrotorPtr_->getControl(cmd_);
+    }
     for (size_t i = 0; i < 4; ++i) {
       if (std::isnan(control_.rpm[i])) control_.rpm[i] = last_control.rpm[i];
     }
