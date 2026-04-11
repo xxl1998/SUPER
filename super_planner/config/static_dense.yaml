@@ -5,7 +5,8 @@ fsm:
   click_yaw_en: true
   replan_rate: 15.0
   cmd_topic: "/planning/pos_cmd"
-  mpc_cmd_topic: "/planning_cmd/poly_traj"
+  mpc_cmd_topic: "/planning_cmd/mpc"
+  poly_cmd_topic: "/planning_cmd/poly_traj"
   timer_en: true
 
 super_planner:
@@ -39,10 +40,14 @@ traj_opt:
     print_optimizer_log: false
 
   boundary:
-    max_vel: 8.0
-    max_acc: 15.0
-    max_jerk: 120.0
-    max_omg: 2.5
+    # max_vel: 3.0
+    # max_acc: 5.0
+    # max_jerk: 20.0
+    # max_omg: 1.5
+    max_vel: 0.2
+    max_acc: 0.3
+    max_jerk: 2.0
+    max_omg: 0.2
     max_acc_thr: 17.0
     min_acc_thr: 6.0
     penna_margin: 0.05

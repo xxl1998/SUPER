@@ -293,7 +293,9 @@ class Quadrotor {
 
     // Mixer for the '+' quadrotor layout:
     //   [T, Mx, My, Mz] -> [Omega_1^2, ..., Omega_4^2].
-    const float thrust = cmd.thrust > 0.0f ? cmd.thrust : 0.0f;
+    // https://mavlink.io/en/messages/common.html#SET_ATTITUDE_TARGET
+    // mavros/mavlink body_rate+thrust, thrust is 0~1 normalized value
+    const float thrust = cmd.thrust > 0.0f ? (cmd.thrust * config_.kf * config_.max_rpm * config_.max_rpm * 4) : 0.0f;
     float w_sq[4];
     w_sq[0] = thrust / (4 * kf) - M2 / (2 * d * kf) + M3 / (4 * km);
     w_sq[1] = thrust / (4 * kf) + M2 / (2 * d * kf) + M3 / (4 * km);

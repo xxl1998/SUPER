@@ -229,7 +229,7 @@ class PerfectDrone {
     cmd_.qx = quat.x();
     cmd_.qy = quat.y();
     cmd_.qz = quat.z();
-    body_rate_cmd_.thrust = config.mass * config.g;
+    body_rate_cmd_.thrust = config.mass * config.g / (config.kf * config.max_rpm * config.max_rpm * 4);
     body_rate_cmd_.kOm[0] = quadrotor_cfg_.gains_ang_x;
     body_rate_cmd_.kOm[1] = quadrotor_cfg_.gains_ang_y;
     body_rate_cmd_.kOm[2] = quadrotor_cfg_.gains_ang_z;

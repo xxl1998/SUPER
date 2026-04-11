@@ -35,6 +35,7 @@
 #include "nav_msgs/Odometry.h"
 #include "quadrotor_msgs/PositionCommand.h"
 #include "quadrotor_msgs/PolynomialTrajectory.h"
+#include "quadrotor_msgs/MpcPositionCommand.h"
 
 
 namespace fsm {
@@ -42,8 +43,10 @@ namespace fsm {
         ros::NodeHandle nh_;
         ros::Subscriber goal_sub_;
         ros::Publisher cmd_pub, mpc_cmd_pub_, path_pub_, goal_pub_;
+        ros::Publisher poly_cmd_pub_;
         ros::Timer execution_timer_, replan_timer_, cmd_timer_;
         quadrotor_msgs::PositionCommand pid_cmd_;
+        quadrotor_msgs::MpcPositionCommand mpc_cmd_;
         rog_map::ROGMapROS::Ptr map_ptr_;
         quadrotor_msgs::PositionCommand latest_cmd;
         nav_msgs::Path path;
@@ -73,7 +76,7 @@ namespace fsm {
         void publishPolyTraj() override {
             quadrotor_msgs::PolynomialTrajectory cmd_traj;
             getCommittedTrajectory(cmd_traj);
-            mpc_cmd_pub_.publish(cmd_traj);
+            poly_cmd_pub_.publish(cmd_traj);
         }
 
         void getOneHeartBeatMsg(quadrotor_msgs::PolynomialTrajectory &heartbeat, bool &traj_finish) {
@@ -166,6 +169,85 @@ namespace fsm {
             pos_cmd.thrust.z = aT;
             latest_cmd = pos_cmd;
             cmd_logs_.push_back(latest_cmd);
+        }
+
+        void getMpcCommand(quadrotor_msgs::MpcPositionCommand &mpc_cmd, bool &traj_finish)
+        {
+            mpc_cmd.cmds.clear();
+            mpc_cmd.cmds.resize(cfg_.mpc_horizon);
+            mpc_cmd.mpc_horizon = cfg_.mpc_horizon;
+            mpc_cmd.command_flag = quadrotor_msgs::MpcPositionCommand::NORMAL_COMMAND;
+
+            mpc_cmd.header.stamp = ros::Time::now();
+            mpc_cmd.header.frame_id = "world";
+
+            // Use the existing trajectory access pattern
+            planner_ptr_->lockCommittedTraj();
+            const Trajectory pos_traj = planner_ptr_->getCommittedPositionTrajectory();
+            const Trajectory yaw_traj = planner_ptr_->getCommittedYawTrajectory();
+
+            const double cur_t = ros_ptr_->getSimTime();
+            const double cmd_start_WT = pos_traj.start_WT;
+            const double total_dur = pos_traj.getTotalDuration();
+
+            // Check if trajectory is finished
+            traj_finish = (cur_t - cmd_start_WT) > total_dur;
+
+            for (int i = 0; i < cfg_.mpc_horizon; i++)
+            {
+                double dt = i * cfg_.mpc_dt;
+                double eval_t = (cur_t - cmd_start_WT) + dt;
+
+                // Clamp eval_t to trajectory bounds
+                if (eval_t < 0) eval_t = 0;
+                if (eval_t > total_dur) eval_t = total_dur;
+
+                StatePVAJ pvaj = pos_traj.getState(eval_t);
+
+                // Get yaw from yaw trajectory
+                double yaw = 0.0, yaw_dot = 0.0;
+                if (yaw_traj.getPieceNum() > 0)
+                {
+                    StatePVAJ yaw_state = yaw_traj.getState(eval_t);
+                    yaw = yaw_state(0, 0);
+                    yaw_dot = yaw_state(0, 1);
+                }
+
+                quadrotor_msgs::PositionCommand &cmd = mpc_cmd.cmds[i];
+                cmd.trajectory_flag = 0;
+                cmd.header.stamp = ros::Time::now() + ros::Duration(dt);
+                cmd.header.frame_id = "world";
+
+                cmd.position.x = pvaj(0, 0);
+                cmd.position.y = pvaj(1, 0);
+                cmd.position.z = pvaj(2, 0);
+                cmd.velocity.x = pvaj(0, 1);
+                cmd.velocity.y = pvaj(1, 1);
+                cmd.velocity.z = pvaj(2, 1);
+                cmd.acceleration.x = pvaj(0, 2);
+                cmd.acceleration.y = pvaj(1, 2);
+                cmd.acceleration.z = pvaj(2, 2);
+                cmd.jerk.x = pvaj(0, 3);
+                cmd.jerk.y = pvaj(1, 3);
+                cmd.jerk.z = pvaj(2, 3);
+                cmd.yaw = yaw;
+                cmd.yaw_dot = yaw_dot;
+                cmd.trajectory_flag = 1; // Normal trajectory
+
+                Vec3f rpy, omg;
+                double aT;
+                geometry_utils::convertFlatOutputToAttAndOmg(pvaj.col(0), pvaj.col(1), pvaj.col(2), pvaj.col(3), yaw,
+                                                             yaw_dot, rpy, omg, aT);
+                cmd.attitude.x = rpy(0);
+                cmd.attitude.y = rpy(1);
+                cmd.attitude.z = rpy(2);
+                cmd.angular_velocity.x = omg(0);
+                cmd.angular_velocity.y = omg(1);
+                cmd.angular_velocity.z = omg(2);
+                cmd.thrust.z = aT;
+            }
+
+            planner_ptr_->unlockCommittedTraj();
         }
 
     public:
@@ -279,7 +361,8 @@ namespace fsm {
             ros_ptr_ = std::make_shared<ros_interface::Ros1Interface>(nh_);
             planner_ptr_ = std::make_shared<SuperPlanner>(cfg_path, ros_ptr_, map_ptr_);
             cmd_pub = nh_.advertise<quadrotor_msgs::PositionCommand>(cfg_.cmd_topic, 10);
-            mpc_cmd_pub_ = nh_.advertise<quadrotor_msgs::PolynomialTrajectory>(cfg_.mpc_cmd_topic, 10);
+            poly_cmd_pub_ = nh_.advertise<quadrotor_msgs::PolynomialTrajectory>(cfg_.poly_cmd_topic, 10);
+            mpc_cmd_pub_ = nh_.advertise<quadrotor_msgs::MpcPositionCommand>(cfg_.mpc_cmd_topic, 10);
             path_pub_ = nh_.advertise<nav_msgs::Path>("fsm/path", 100);
             goal_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/goal_super", 10);
 
@@ -336,7 +419,9 @@ namespace fsm {
             quadrotor_msgs::PolynomialTrajectory heartbeat;
             getOneHeartBeatMsg(heartbeat, traj_finish_);
             getOnePositionCommand(pid_cmd_, traj_finish_);
-            mpc_cmd_pub_.publish(heartbeat);
+            getMpcCommand(mpc_cmd_, traj_finish_);
+            mpc_cmd_pub_.publish(mpc_cmd_);
+            poly_cmd_pub_.publish(heartbeat);
             cmd_pub.publish(pid_cmd_);
 
             geometry_msgs::PoseStamped goal_msg;

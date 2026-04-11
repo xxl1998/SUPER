@@ -48,7 +48,13 @@ namespace fsm {
 
         bool click_yaw_en{};
         string cmd_topic, mpc_cmd_topic, click_goal_topic;
+        string poly_cmd_topic;
         double yaw_dot_max{};
+
+        // MPC parameters
+        int mpc_horizon{};
+        double mpc_dt{};
+        int mpc_mode{}; // 1 for PVAJ mode, 2 for PolynomialTrajectory mode
 
         Config() = default;
 
@@ -61,9 +67,14 @@ namespace fsm {
             loader.LoadParam("fsm/replan_rate", replan_rate, 10.0);
             loader.LoadParam("fsm/click_height", click_height, 1.5);
             loader.LoadParam("fsm/cmd_topic", cmd_topic, string("/planning/pos_cmd"));
+            loader.LoadParam("fsm/poly_cmd_topic", poly_cmd_topic, string("/planning_cmd/poly_traj"));
             loader.LoadParam("fsm/mpc_cmd_topic", mpc_cmd_topic, string("/planning_cmd/mpc"));
             loader.LoadParam("fsm/click_goal_topic", click_goal_topic, string("/planning/click_goal_topic"));
 
+            // Load MPC parameters
+            loader.LoadParam("fsm/mpc_horizon", mpc_horizon, 10);
+            loader.LoadParam("fsm/mpc_dt", mpc_dt, 0.01);
+            loader.LoadParam("fsm/mpc_mode", mpc_mode, MPC_PVAJ_MODE);
 
             loader.LoadParam("super_planner/yaw_dot_max", yaw_dot_max, 1.0, true);
             loader.LoadParam("super_planner/visualization_en", visualization_en, false, true);
