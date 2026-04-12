@@ -14,7 +14,7 @@ find_package(catkin REQUIRED COMPONENTS
         geometry_msgs
         nav_msgs
         message_generation
-        quadrotor_msgs
+        mars_quadrotor_msgs
         visualization_msgs
         rosfmt
         message_filters
@@ -61,5 +61,5 @@ target_link_libraries(so3_quadrotor_sim
 )
 add_dependencies(so3_quadrotor_sim
   ${catkin_EXPORTED_TARGETS}
-  quadrotor_msgs_generate_messages_cpp
+  mars_quadrotor_msgs_generate_messages_cpp
 )

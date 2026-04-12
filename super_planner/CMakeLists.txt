@@ -28,7 +28,7 @@ find_package(catkin REQUIRED COMPONENTS
         geometry_msgs
         nav_msgs
         message_generation
-        quadrotor_msgs
+        mars_quadrotor_msgs
         visualization_msgs
         message_filters
         rog_map
@@ -81,21 +81,21 @@ target_link_libraries(fsm_node
         ${THIRD_PARTY}
 )
 
-#add_executable(read_replan_log
-#        Apps/read_replan_log.cpp
-#)
-#target_link_libraries(read_replan_log
-#        super
-#        -lncurses
-#        ${THIRD_PARTY}
-#)
-#
-#
-#add_executable(traj_opt_tuning
-#        Apps/traj_opt_tuning.cpp
-#)
-#target_link_libraries(traj_opt_tuning
-#        super
-#        -lncurses
-#        ${THIRD_PARTY}
-#)
+add_executable(read_replan_log
+        Apps/read_replan_log.cpp
+)
+target_link_libraries(read_replan_log
+        super
+        -lncurses
+        ${THIRD_PARTY}
+)
+
+
+add_executable(traj_opt_tuning
+        Apps/traj_opt_tuning.cpp
+)
+target_link_libraries(traj_opt_tuning
+        super
+        -lncurses
+        ${THIRD_PARTY}
+)

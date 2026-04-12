@@ -3,8 +3,8 @@
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
 #include <pcl_conversions/pcl_conversions.h>
-#include <quadrotor_msgs/PositionCommand.h>
-#include <quadrotor_msgs/SO3Command.h>
+#include <mars_quadrotor_msgs/PositionCommand.h>
+#include <mars_quadrotor_msgs/SO3Command.h>
 #include <ros/ros.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -328,13 +328,13 @@ class PerfectDrone {
   nav_msgs::Odometry odom_;
   sensor_msgs::Imu imu_;
   std::string mesh_resource_;
-  quadrotor_msgs::SO3Command so3cmd_;
+  mars_quadrotor_msgs::SO3Command so3cmd_;
   so3_quadrotor::BodyRateCmd body_rate_cmd_;
   bool position_cmd_received_flag_ = false;
   Eigen::Vector3d des_pos_;
   double des_yaw_;
 
-  void so3cmd_callback(const quadrotor_msgs::SO3Command& cmd_msg) {
+  void so3cmd_callback(const mars_quadrotor_msgs::SO3Command& cmd_msg) {
     cmd_.force[0] = cmd_msg.force.x;
     cmd_.force[1] = cmd_msg.force.y;
     cmd_.force[2] = cmd_msg.force.z;
@@ -385,7 +385,7 @@ class PerfectDrone {
     }
   }
 
-  void cmdCallback(const quadrotor_msgs::PositionCommandConstPtr& msg) {
+  void cmdCallback(const mars_quadrotor_msgs::PositionCommandConstPtr& msg) {
     position_cmd_received_flag_ = true;
     Eigen::Vector3d des_pos(msg->position.x, msg->position.y, msg->position.z);
     Eigen::Vector3d des_vel(msg->velocity.x, msg->velocity.y, msg->velocity.z);

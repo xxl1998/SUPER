@@ -15,7 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
         geometry_msgs
         nav_msgs
         message_generation
-        quadrotor_msgs
+        mars_quadrotor_msgs
         visualization_msgs
         message_filters
         )

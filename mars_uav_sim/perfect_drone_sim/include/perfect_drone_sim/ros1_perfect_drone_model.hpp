@@ -5,7 +5,7 @@
 #include "visualization_msgs/Marker.h"
 #include "visualization_msgs/MarkerArray.h"
 #include "geometry_msgs/PoseStamped.h"
-#include "quadrotor_msgs/PositionCommand.h"
+#include "mars_quadrotor_msgs/PositionCommand.h"
 #include "nav_msgs/Odometry.h"
 #include "tf2_ros/transform_broadcaster.h"
 #include "string"
@@ -133,7 +133,7 @@ namespace perfect_drone {
         nav_msgs::Odometry odom_;
         std::string mesh_resource_;
 
-        void cmdCallback(const quadrotor_msgs::PositionCommandConstPtr &msg) {
+        void cmdCallback(const mars_quadrotor_msgs::PositionCommandConstPtr &msg) {
             Vec3 pos(msg->position.x, msg->position.y, msg->position.z);
             Vec3 vel(msg->velocity.x, msg->velocity.y, msg->velocity.z);
             Vec3 acc(msg->acceleration.x, msg->acceleration.y, msg->acceleration.z);

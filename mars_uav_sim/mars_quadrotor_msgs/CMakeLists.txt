@@ -41,7 +41,7 @@
 
 #------------------------------------------------------------------
 cmake_minimum_required(VERSION 2.8.3)
-project(quadrotor_msgs)
+project(mars_quadrotor_msgs)
 
 find_package(catkin REQUIRED COMPONENTS
         #armadillo
@@ -65,7 +65,7 @@ add_message_files(
         PositionCommand.msg
         MpcPositionCommand.msg
         PolynomialTrajectory.msg
-        TrakingPerformance.msg
+        TrackingPerformance.msg
         QuadrotorState.msg
         SO3Command.msg
 )
