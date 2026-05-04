@@ -268,6 +268,7 @@ RobotState ROGMap::getRobotState() const {
 void ROGMap::updateRobotState(const Pose& pose) {
     robot_state_.p = pose.first;
     robot_state_.q = pose.second;
+    robot_state_.v = Vec3f::Zero();
     robot_state_.rcv_time = getSystemWalltimeNow();
     robot_state_.rcv = true;
     robot_state_.yaw = get_yaw_from_quaternion<double>(pose.second);

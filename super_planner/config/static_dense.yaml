@@ -1,7 +1,8 @@
 fsm:
   click_goal_en: true
   click_goal_topic: "/planning/click_goal"
-  click_height: 1.5
+  modify_goal_height: false  # Allow modification of goal height
+  click_height: 1.5 # only used when modify_goal_height is true
   click_yaw_en: true
   replan_rate: 15.0
   cmd_topic: "/planning/pos_cmd"

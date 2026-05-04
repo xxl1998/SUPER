@@ -260,8 +260,14 @@ namespace fsm {
     void Fsm::setGoalPosiAndYaw(const Vec3f &p, const Quatf &q) {
 
         auto click_point = p;
-        if (cfg_.click_height > -5) {
+        if (cfg_.click_height > -5 && cfg_.modify_goal_height) {
             click_point.z() = cfg_.click_height;
+        }
+
+        if((click_point - gi_.goal_p).norm() < cfg_.goal_reach_threshold) {
+            cout << GREEN << " -- [Fsm] Ignore target goal at: " << click_point.transpose()
+                << " current goal: " << gi_.goal_p.transpose() << RESET << endl;
+            return;
         }
 
         if (planner_ptr_->getMap()->getNearestInfCellNot(GridType::OCCUPIED, click_point, gi_.goal_p, 3.0)) {
