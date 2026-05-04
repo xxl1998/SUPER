@@ -56,6 +56,16 @@ namespace fsm {
         double mpc_dt{};
         int mpc_mode{}; // 1 for PVAJ mode, 2 for PolynomialTrajectory mode
 
+        // Auto takeoff parameters
+        bool auto_takeoff_enable{};
+        double auto_takeoff_height{};
+        double auto_takeoff_threshold{};
+        double auto_takeoff_duration{};  // 起飞时间设置（秒）
+        double auto_takeoff_max_velocity{};  // 起飞最大速度设置（m/s）
+
+        // Goal reaching threshold
+        double goal_reach_threshold{};
+
         Config() = default;
 
         Config(const std::string & cfg_path) {
@@ -75,6 +85,16 @@ namespace fsm {
             loader.LoadParam("fsm/mpc_horizon", mpc_horizon, 10);
             loader.LoadParam("fsm/mpc_dt", mpc_dt, 0.01);
             loader.LoadParam("fsm/mpc_mode", mpc_mode, MPC_PVAJ_MODE);
+
+            // Load auto takeoff parameters
+            loader.LoadParam("fsm/auto_takeoff_enable", auto_takeoff_enable, true);
+            loader.LoadParam("fsm/auto_takeoff_height", auto_takeoff_height, 1.5);
+            loader.LoadParam("fsm/auto_takeoff_threshold", auto_takeoff_threshold, 0.2);
+            loader.LoadParam("fsm/auto_takeoff_duration", auto_takeoff_duration, 3.0);  // 默认3秒起飞时间
+            loader.LoadParam("fsm/auto_takeoff_max_velocity", auto_takeoff_max_velocity, 1.0);  // 默认最大速度1m/s
+
+            // Load goal reaching threshold
+            loader.LoadParam("fsm/goal_reach_threshold", goal_reach_threshold, 0.3);
 
             loader.LoadParam("super_planner/yaw_dot_max", yaw_dot_max, 1.0, true);
             loader.LoadParam("super_planner/visualization_en", visualization_en, false, true);

@@ -32,11 +32,13 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <ros_interface/ros2/ros2_interface.hpp>
+#include <utils/geometry/geometry_utils.h>
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "mars_quadrotor_msgs/msg/position_command.hpp"
 #include "mars_quadrotor_msgs/msg/polynomial_trajectory.hpp"
+#include "mars_quadrotor_msgs/msg/mpc_position_command.hpp"
 
 
 namespace fsm {
@@ -44,7 +46,8 @@ namespace fsm {
 
         rclcpp::Node::SharedPtr nh_;
         rclcpp::Publisher<mars_quadrotor_msgs::msg::PositionCommand>::SharedPtr cmd_pub_;
-        rclcpp::Publisher<mars_quadrotor_msgs::msg::PolynomialTrajectory>::SharedPtr mpc_cmd_pub_;
+        rclcpp::Publisher<mars_quadrotor_msgs::msg::PolynomialTrajectory>::SharedPtr poly_cmd_pub_;
+        rclcpp::Publisher<mars_quadrotor_msgs::msg::MpcPositionCommand>::SharedPtr mpc_cmd_pub_;
         rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_sub_;
 
@@ -52,6 +55,7 @@ namespace fsm {
         rclcpp::CallbackGroup::SharedPtr exec_cbk_group_, replan_cbk_group_, cmd_cbk_group_, goal_cbk_group_;
 
         mars_quadrotor_msgs::msg::PositionCommand pid_cmd_;
+        mars_quadrotor_msgs::msg::MpcPositionCommand mpc_cmd_;
         rog_map::ROGMapROS::Ptr map_ptr_;
         mars_quadrotor_msgs::msg::PositionCommand latest_cmd;
         nav_msgs::msg::Path path;
@@ -81,7 +85,65 @@ namespace fsm {
         void publishPolyTraj() override {
             mars_quadrotor_msgs::msg::PolynomialTrajectory cmd_traj;
             getCommittedTrajectory(cmd_traj);
-            mpc_cmd_pub_->publish(cmd_traj);
+            poly_cmd_pub_->publish(cmd_traj);
+        }
+
+        void publishAutoTakeoffCommand() override
+        {
+            // Initialize takeoff height on first call
+            if (!takeoff_initialized_) {
+                initial_takeoff_z_ = robot_state_.p.z();
+                takeoff_initialized_ = true;
+            }
+
+            // Publish MAVROS position target if enabled
+            if (cfg_.mavros_pos_target_enable && mavros_pos_target_pub_)
+            {
+                mavros_msgs::msg::PositionTarget takeoff_msg;
+                ros_ptr_->getSimTime(takeoff_msg.header.stamp.sec, takeoff_msg.header.stamp.nanosec);
+                takeoff_msg.header.frame_id = "world";
+
+                // Set target position to current XY but desired takeoff height
+                takeoff_msg.position.x = robot_state_.p.x();
+                takeoff_msg.position.y = robot_state_.p.y();
+                takeoff_msg.position.z = initial_takeoff_z_ + cfg_.auto_takeoff_height;
+
+                // Set zero velocity and acceleration for stable takeoff
+                takeoff_msg.velocity.x = 0.0;
+                takeoff_msg.velocity.y = 0.0;
+                takeoff_msg.velocity.z = 0.0;
+                takeoff_msg.acceleration_or_force.x = 0.0;
+                takeoff_msg.acceleration_or_force.y = 0.0;
+                takeoff_msg.acceleration_or_force.z = 0.0;
+
+                // Set yaw to current yaw to avoid rotation during takeoff
+                takeoff_msg.yaw = geometry_utils::get_yaw_from_quaternion(robot_state_.q);
+                takeoff_msg.yaw_rate = 0.0;
+
+                // Set type mask for position control
+                takeoff_msg.type_mask = 0; // Control position, velocity, acceleration, yaw
+
+                mavros_pos_target_pub_->publish(takeoff_msg);
+            }
+
+            // Always publish MPC command for smooth takeoff trajectory
+            if (mpc_cmd_pub_)
+            {
+                mars_quadrotor_msgs::msg::MpcPositionCommand takeoff_mpc_cmd;
+                generateTakeoffMpcCommand(takeoff_mpc_cmd);
+                mpc_cmd_pub_->publish(takeoff_mpc_cmd);
+            }
+
+            // Also publish single position command for backward compatibility
+            if (cmd_pub_)
+            {
+                mars_quadrotor_msgs::msg::PositionCommand takeoff_cmd;
+                generateTakeoffPositionCommand(takeoff_cmd);
+                cmd_pub_->publish(takeoff_cmd);
+            }
+
+            fmt::print(fg(fmt::color::cyan), " -- [Fsm] Publishing auto takeoff command: target_z={:.2f}m, current_z={:.2f}m.\n",
+                       cfg_.auto_takeoff_height, robot_state_.p.z());
         }
 
         void getOneHeartBeatMsg(mars_quadrotor_msgs::msg::PolynomialTrajectory &heartbeat, bool &traj_finish) {
@@ -175,6 +237,223 @@ namespace fsm {
             pos_cmd.thrust.z = aT;
             latest_cmd = pos_cmd;
             cmd_logs_.push_back(latest_cmd);
+        }
+
+        void getMpcCommand(mars_quadrotor_msgs::msg::MpcPositionCommand &mpc_cmd, bool &traj_finish)
+        {
+            mpc_cmd.cmds.clear();
+            mpc_cmd.cmds.resize(cfg_.mpc_horizon);
+            mpc_cmd.mpc_horizon = cfg_.mpc_horizon;
+            mpc_cmd.command_flag = mars_quadrotor_msgs::msg::MpcPositionCommand::NORMAL_COMMAND;
+            
+            ros_ptr_->getSimTime(mpc_cmd.header.stamp.sec, mpc_cmd.header.stamp.nanosec);
+            mpc_cmd.header.frame_id = "world";
+
+            // Use the existing trajectory access pattern
+            planner_ptr_->lockCommittedTraj();
+            const Trajectory pos_traj = planner_ptr_->getCommittedPositionTrajectory();
+            const Trajectory yaw_traj = planner_ptr_->getCommittedYawTrajectory();
+            
+            const double cur_t = ros_ptr_->getSimTime();
+            const double cmd_start_WT = pos_traj.start_WT;
+            const double total_dur = pos_traj.getTotalDuration();
+            
+            // Check if trajectory is finished
+            traj_finish = (cur_t - cmd_start_WT) > total_dur;
+
+            for (int i = 0; i < cfg_.mpc_horizon; i++)
+            {
+                double dt = i * cfg_.mpc_dt;
+                double eval_t = (cur_t - cmd_start_WT) + dt;
+                
+                // Clamp eval_t to trajectory bounds
+                if (eval_t < 0) eval_t = 0;
+                if (eval_t > total_dur) eval_t = total_dur;
+                
+                StatePVAJ pvaj = pos_traj.getState(eval_t);
+                
+                // Get yaw from yaw trajectory
+                double yaw = 0.0, yaw_dot = 0.0;
+                if (yaw_traj.getPieceNum() > 0)
+                {
+                    StatePVAJ yaw_state = yaw_traj.getState(eval_t);
+                    yaw = yaw_state(0, 0);
+                    yaw_dot = yaw_state(0, 1);
+                }
+                
+                mars_quadrotor_msgs::msg::PositionCommand &cmd = mpc_cmd.cmds[i];
+                cmd.trajectory_flag = 0;
+                ros_ptr_->getSimTime(cmd.header.stamp.sec, cmd.header.stamp.nanosec);
+                cmd.header.stamp.nanosec += static_cast<int64_t>(dt * 1e9);
+                cmd.header.frame_id = "world";
+                
+                cmd.position.x = pvaj(0, 0);
+                cmd.position.y = pvaj(1, 0);
+                cmd.position.z = pvaj(2, 0);
+                cmd.velocity.x = pvaj(0, 1);
+                cmd.velocity.y = pvaj(1, 1);
+                cmd.velocity.z = pvaj(2, 1);
+                cmd.acceleration.x = pvaj(0, 2);
+                cmd.acceleration.y = pvaj(1, 2);
+                cmd.acceleration.z = pvaj(2, 2);
+                cmd.jerk.x = pvaj(0, 3);
+                cmd.jerk.y = pvaj(1, 3);
+                cmd.jerk.z = pvaj(2, 3);
+                cmd.yaw = yaw;
+                cmd.yaw_dot = yaw_dot;
+                cmd.trajectory_flag = 1; // Normal trajectory
+                
+                Vec3f rpy, omg;
+                double aT;
+                geometry_utils::convertFlatOutputToAttAndOmg(pvaj.col(0), pvaj.col(1), pvaj.col(2), pvaj.col(3), yaw,
+                                                             yaw_dot, rpy, omg, aT);
+                cmd.attitude.x = rpy(0);
+                cmd.attitude.y = rpy(1);
+                cmd.attitude.z = rpy(2);
+                cmd.angular_velocity.x = omg(0);
+                cmd.angular_velocity.y = omg(1);
+                cmd.angular_velocity.z = omg(2);
+                cmd.thrust.z = aT;
+            }
+            
+            planner_ptr_->unlockCommittedTraj();
+        }
+
+        void generateTakeoffMpcCommand(mars_quadrotor_msgs::msg::MpcPositionCommand &mpc_cmd)
+        {
+            mpc_cmd.cmds.clear();
+            mpc_cmd.cmds.resize(cfg_.mpc_horizon);
+            mpc_cmd.mpc_horizon = cfg_.mpc_horizon;
+            mpc_cmd.command_flag = mars_quadrotor_msgs::msg::MpcPositionCommand::NORMAL_COMMAND;
+            
+            ros_ptr_->getSimTime(mpc_cmd.header.stamp.sec, mpc_cmd.header.stamp.nanosec);
+            mpc_cmd.header.frame_id = "world";
+
+            // Current position and target
+            const double current_z = robot_state_.p.z();
+            const double target_z = initial_takeoff_z_ + cfg_.auto_takeoff_height;
+            const double current_yaw = geometry_utils::get_yaw_from_quaternion(robot_state_.q);
+            const double takeoff_duration = cfg_.auto_takeoff_duration;
+            
+            // Calculate constant velocity for uniform takeoff
+            const double height_diff = target_z - current_z;
+            const double takeoff_velocity = cfg_.auto_takeoff_max_velocity;   // 使用配置的最大速度
+            
+            // Generate uniform takeoff trajectory over horizon
+            for (int i = 0; i < cfg_.mpc_horizon; i++)
+            {
+                double dt = i * cfg_.mpc_dt;
+                
+                mars_quadrotor_msgs::msg::PositionCommand &cmd = mpc_cmd.cmds[i];
+                cmd.trajectory_flag = 0;
+                ros_ptr_->getSimTime(cmd.header.stamp.sec, cmd.header.stamp.nanosec);
+                cmd.header.stamp.nanosec += static_cast<int64_t>(dt * 1e9);
+                cmd.header.frame_id = "world";
+                
+                // Position: linear interpolation with constant velocity
+                cmd.position.x = robot_state_.p.x();
+                cmd.position.y = robot_state_.p.y();
+                
+                // Calculate target height at this time step
+                double target_height = current_z + takeoff_velocity * dt;
+                // Clamp to target height if we've reached it
+                cmd.position.z = std::min(target_height, target_z);
+                
+                // Velocity: constant during takeoff, zero when reached target
+                cmd.velocity.x = 0.0;
+                cmd.velocity.y = 0.0;
+                cmd.velocity.z = (cmd.position.z < target_z) ? takeoff_velocity : 0.0;
+                
+                // Zero acceleration and jerk for constant velocity
+                cmd.acceleration.x = 0.0;
+                cmd.acceleration.y = 0.0;
+                cmd.acceleration.z = 0.0;
+                
+                cmd.jerk.x = 0.0;
+                cmd.jerk.y = 0.0;
+                cmd.jerk.z = 0.0;
+                
+                // Yaw: maintain current yaw
+                cmd.yaw = current_yaw;
+                cmd.yaw_dot = 0.0;
+                cmd.trajectory_flag = 1; // Normal trajectory
+                
+                // Calculate attitude and angular velocity
+                Vec3f pvaj_pos(cmd.position.x, cmd.position.y, cmd.position.z);
+                Vec3f pvaj_vel(cmd.velocity.x, cmd.velocity.y, cmd.velocity.z);
+                Vec3f pvaj_acc(cmd.acceleration.x, cmd.acceleration.y, cmd.acceleration.z);
+                Vec3f pvaj_jerk(cmd.jerk.x, cmd.jerk.y, cmd.jerk.z);
+                
+                Vec3f rpy, omg;
+                double aT;
+                geometry_utils::convertFlatOutputToAttAndOmg(pvaj_pos, pvaj_vel, pvaj_acc, pvaj_jerk, cmd.yaw,
+                                                             cmd.yaw_dot, rpy, omg, aT);
+                cmd.attitude.x = rpy(0);
+                cmd.attitude.y = rpy(1);
+                cmd.attitude.z = rpy(2);
+                cmd.angular_velocity.x = omg(0);
+                cmd.angular_velocity.y = omg(1);
+                cmd.angular_velocity.z = omg(2);
+                cmd.thrust.z = aT;
+            }
+        }
+
+        void generateTakeoffPositionCommand(mars_quadrotor_msgs::msg::PositionCommand &pos_cmd)
+        {
+            pos_cmd.trajectory_flag = 0;
+            ros_ptr_->getSimTime(pos_cmd.header.stamp.sec, pos_cmd.header.stamp.nanosec);
+            pos_cmd.header.frame_id = "world";
+            
+            // Target position: current XY, desired takeoff height
+            pos_cmd.position.x = robot_state_.p.x();
+            pos_cmd.position.y = robot_state_.p.y();
+            pos_cmd.position.z = initial_takeoff_z_ + cfg_.auto_takeoff_height;
+            
+            // Velocity: zero for stable takeoff
+            pos_cmd.velocity.x = 0.0;
+            pos_cmd.velocity.y = 0.0;
+            pos_cmd.velocity.z = 0.0;
+            
+            // Acceleration: zero for smooth takeoff
+            pos_cmd.acceleration.x = 0.0;
+            pos_cmd.acceleration.y = 0.0;
+            pos_cmd.acceleration.z = 0.0;
+            
+            // Jerk: zero
+            pos_cmd.jerk.x = 0.0;
+            pos_cmd.jerk.y = 0.0;
+            pos_cmd.jerk.z = 0.0;
+            
+            // Yaw: maintain current yaw
+            pos_cmd.yaw = geometry_utils::get_yaw_from_quaternion(robot_state_.q);
+            pos_cmd.yaw_dot = 0.0;
+            pos_cmd.trajectory_flag = 1; // Normal trajectory
+            
+            // Calculate attitude and angular velocity
+            Vec3f pvaj_pos(pos_cmd.position.x, pos_cmd.position.y, pos_cmd.position.z);
+            Vec3f pvaj_vel(pos_cmd.velocity.x, pos_cmd.velocity.y, pos_cmd.velocity.z);
+            Vec3f pvaj_acc(pos_cmd.acceleration.x, pos_cmd.acceleration.y, pos_cmd.acceleration.z);
+            Vec3f pvaj_jerk(pos_cmd.jerk.x, pos_cmd.jerk.y, pos_cmd.jerk.z);
+            
+            Vec3f rpy, omg;
+            double aT;
+            geometry_utils::convertFlatOutputToAttAndOmg(pvaj_pos, pvaj_vel, pvaj_acc, pvaj_jerk, pos_cmd.yaw,
+                                                         pos_cmd.yaw_dot, rpy, omg, aT);
+            pos_cmd.attitude.x = rpy(0);
+            pos_cmd.attitude.y = rpy(1);
+            pos_cmd.attitude.z = rpy(2);
+            pos_cmd.angular_velocity.x = omg(0);
+            pos_cmd.angular_velocity.y = omg(1);
+            pos_cmd.angular_velocity.z = omg(2);
+            pos_cmd.thrust.z = aT;
+            
+            // Set PID gains
+            pos_cmd.kx[0] = 5.7;
+            pos_cmd.kx[1] = 5.7;
+            pos_cmd.kx[2] = 4.2;
+            pos_cmd.kv[0] = 3.4;
+            pos_cmd.kv[1] = 3.4;
+            pos_cmd.kv[2] = 4.0;
         }
 
     public:
@@ -296,8 +575,9 @@ namespace fsm {
             ros_ptr_ = std::make_shared<ros_interface::Ros2Interface>(nh_);
             planner_ptr_ = std::make_shared<SuperPlanner>(cfg_path, ros_ptr_, map_ptr_);
             cmd_pub_ = nh_->create_publisher<mars_quadrotor_msgs::msg::PositionCommand>(cfg_.cmd_topic, qos);
-            mpc_cmd_pub_ = nh_->create_publisher<mars_quadrotor_msgs::msg::PolynomialTrajectory>(cfg_.mpc_cmd_topic,
-                                                                                                 qos);
+            poly_cmd_pub_ = nh_->create_publisher<mars_quadrotor_msgs::msg::PolynomialTrajectory>(cfg_.poly_cmd_topic,
+                qos);
+            mpc_cmd_pub_ = nh_->create_publisher<mars_quadrotor_msgs::msg::MpcPositionCommand>(cfg_.mpc_cmd_topic, qos);
             path_pub_ = nh_->create_publisher<nav_msgs::msg::Path>("fsm/path", qos);
 
             int cmd_cnt = 0;
@@ -368,6 +648,10 @@ namespace fsm {
             if (stop) {
                 return;
             }
+
+            // print the machine_state_
+            // cout << YELLOW << " -- [Fsm] Current state: " << MACHINE_STATE_STR[machine_state_] << RESET << endl;
+
             if (machine_state_ != FOLLOW_TRAJ && machine_state_ != EMER_STOP) {
                 return;
             }
@@ -376,11 +660,13 @@ namespace fsm {
             mars_quadrotor_msgs::msg::PolynomialTrajectory heartbeat;
             getOneHeartBeatMsg(heartbeat, traj_finish_);
             getOnePositionCommand(pid_cmd_, traj_finish_);
-            mpc_cmd_pub_->publish(heartbeat);
+            getMpcCommand(mpc_cmd_, traj_finish_);
+            mpc_cmd_pub_->publish(mpc_cmd_);
+            poly_cmd_pub_->publish(heartbeat);
             cmd_pub_->publish(pid_cmd_);
             if (traj_finish_) {
                 cout << GREEN << " -- [Fsm] Traj finish." << RESET << endl;
-                if (closeToGoal(0.1)) {
+                if (closeToGoal(fg_.goal_reach_threshold)) {
                     ChangeState("PubCmdCallback", WAIT_GOAL);
                 } else {
                     ChangeState("PubCmdCallback", GENERATE_TRAJ);

@@ -44,7 +44,7 @@ namespace fsm {
 
 
         vector<string> log_time_str{
-                "TIME_STAMPE", "EPX_TRAJ_FRONTEND",
+                "TIME_STAMPE", "EXP_TRAJ_FRONTEND",
                 "EXP_TRAJ_OPT", "GENERATE_EXP_TRAJ",
                 "BACK_TRAJ_FRONTEND", "BACK_TRAJ_OPT",
                 "GENERATE_BACK_TRAJ", "TOTAL_REPLAN", "VISUALIZATION"
@@ -74,6 +74,7 @@ namespace fsm {
         // execution states
         enum MACHINE_STATE {
             INIT = 0,
+            AUTO_TAKEOFF,
             WAIT_GOAL,
             YAWING,
             GENERATE_TRAJ,
@@ -83,6 +84,7 @@ namespace fsm {
 
         vector<string> MACHINE_STATE_STR{
                 "INIT",
+                "AUTO_TAKEOFF",
                 "WAIT_GOAL",
                 "YAWING",
                 "GENERATE_TRAJ",
@@ -149,6 +151,39 @@ namespace fsm {
         double system_start_time_;
 
         bool traj_finish_{false};
+
+        // Auto takeoff related variables
+        bool auto_takeoff_triggered_{false};
+        double auto_takeoff_start_time_{0.0};
+        double initial_takeoff_z_ = 0.0;
+        bool takeoff_initialized_ = false;
+
+        // Takeoff status tracking
+        enum TAKEOFF_STATUS
+        {
+            TAKEOFF_INIT = 0,
+            TAKEOFF_IN_PROGRESS,
+            TAKEOFF_SUCCESS,
+            TAKEOFF_FAILED_TIMEOUT,
+            TAKEOFF_FAILED_UNSTABLE
+        };
+        
+        TAKEOFF_STATUS takeoff_status_{TAKEOFF_INIT};
+
+        // Function to check if robot is below virtual ground
+        bool isRobotBelowVirtualGround();
+
+        // Function to publish auto takeoff command
+        virtual void publishAutoTakeoffCommand() = 0;
+
+        // Function to get takeoff status
+        TAKEOFF_STATUS getTakeoffStatus() const { return takeoff_status_; }
+        
+        // Function to check if takeoff was successful
+        bool isTakeoffSuccessful() const { return takeoff_status_ == TAKEOFF_SUCCESS; }
+        
+        // Function to reset takeoff status (for retry attempts)
+        void resetTakeoffStatus() { takeoff_status_ = TAKEOFF_INIT; }
 
         void WriteTimeToLog();
 

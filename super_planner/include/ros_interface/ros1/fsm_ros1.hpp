@@ -30,6 +30,7 @@
 #include "fsm/fsm.h"
 
 #include "ros/ros.h"
+#include <utils/geometry/geometry_utils.h>
 #include "geometry_msgs/PoseStamped.h"
 #include "nav_msgs/Path.h"
 #include "nav_msgs/Odometry.h"
@@ -77,6 +78,34 @@ namespace fsm {
             mars_quadrotor_msgs::PolynomialTrajectory cmd_traj;
             getCommittedTrajectory(cmd_traj);
             poly_cmd_pub_.publish(cmd_traj);
+        }
+
+        void publishAutoTakeoffCommand() override
+        {
+            // Initialize takeoff height on first call
+            if (!takeoff_initialized_) {
+                initial_takeoff_z_ = robot_state_.p.z();
+                takeoff_initialized_ = true;
+            }
+
+            // Always publish MPC command for smooth takeoff trajectory
+            if (mpc_cmd_pub_)
+            {
+                mars_quadrotor_msgs::MpcPositionCommand takeoff_mpc_cmd;
+                generateTakeoffMpcCommand(takeoff_mpc_cmd);
+                mpc_cmd_pub_.publish(takeoff_mpc_cmd);
+            }
+
+            // Also publish single position command for backward compatibility
+            if (cmd_pub)
+            {
+                mars_quadrotor_msgs::PositionCommand takeoff_cmd;
+                generateTakeoffPositionCommand(takeoff_cmd);
+                cmd_pub.publish(takeoff_cmd);
+            }
+
+            ROS_INFO("[Fsm] Publishing auto takeoff command: target_z=%.2f, current_z=%.2f",
+                     cfg_.auto_takeoff_height, robot_state_.p.z());
         }
 
         void getOneHeartBeatMsg(mars_quadrotor_msgs::PolynomialTrajectory &heartbeat, bool &traj_finish) {
@@ -250,6 +279,139 @@ namespace fsm {
             planner_ptr_->unlockCommittedTraj();
         }
 
+        void generateTakeoffMpcCommand(mars_quadrotor_msgs::MpcPositionCommand &mpc_cmd)
+        {
+            mpc_cmd.cmds.clear();
+            mpc_cmd.cmds.resize(cfg_.mpc_horizon);
+            mpc_cmd.mpc_horizon = cfg_.mpc_horizon;
+            mpc_cmd.command_flag = mars_quadrotor_msgs::MpcPositionCommand::NORMAL_COMMAND;
+            mpc_cmd.header.stamp = ros::Time::now();
+            mpc_cmd.header.frame_id = "world";
+
+            // Current position and target
+            const double current_z = robot_state_.p.z();
+            const double target_z = initial_takeoff_z_ + cfg_.auto_takeoff_height;
+            const double current_yaw = geometry_utils::get_yaw_from_quaternion(robot_state_.q);
+            const double takeoff_duration = cfg_.auto_takeoff_duration;  // 使用配置的起飞时间
+            const double max_velocity = cfg_.auto_takeoff_max_velocity;   // 使用配置的最大速度
+            
+            // Generate smooth takeoff trajectory over horizon
+            for (int i = 0; i < cfg_.mpc_horizon; i++)
+            {
+                double dt = i * cfg_.mpc_dt;
+                
+                mars_quadrotor_msgs::PositionCommand &cmd = mpc_cmd.cmds[i];
+                cmd.trajectory_flag = 0;
+                cmd.header.stamp = ros::Time::now() + ros::Duration(dt);
+                cmd.header.frame_id = "world";
+                
+                // Position: smooth interpolation from current to target height
+                cmd.position.x = robot_state_.p.x();
+                cmd.position.y = robot_state_.p.y();
+
+                // Calculate target height at this time step
+                double target_height = current_z + max_velocity * dt;
+                // Clamp to target height if we've reached it
+                cmd.position.z = std::min(target_height, target_z);
+
+                // Velocity: constant during takeoff, zero when reached target
+                cmd.velocity.x = 0.0;
+                cmd.velocity.y = 0.0;
+                cmd.velocity.z = (cmd.position.z < target_z) ? max_velocity : 0.0;
+                
+                // Acceleration: derivative of velocity (simplified to zero for smooth takeoff)
+                cmd.acceleration.x = 0.0;
+                cmd.acceleration.y = 0.0;
+                cmd.acceleration.z = 0.0;
+                
+                // Jerk: keep zero for smooth flight
+                cmd.jerk.x = 0.0;
+                cmd.jerk.y = 0.0;
+                cmd.jerk.z = 0.0;
+                
+                // Yaw: maintain current yaw
+                cmd.yaw = current_yaw;
+                cmd.yaw_dot = 0.0;
+                cmd.trajectory_flag = 1; // Normal trajectory
+                
+                // Attitude and angular velocity (simplified for takeoff)
+                Vec3f pvaj_pos(cmd.position.x, cmd.position.y, cmd.position.z);
+                Vec3f pvaj_vel(cmd.velocity.x, cmd.velocity.y, cmd.velocity.z);
+                Vec3f pvaj_acc(cmd.acceleration.x, cmd.acceleration.y, cmd.acceleration.z);
+                Vec3f pvaj_jerk(cmd.jerk.x, cmd.jerk.y, cmd.jerk.z);
+                
+                Vec3f rpy, omg;
+                double aT;
+                geometry_utils::convertFlatOutputToAttAndOmg(pvaj_pos, pvaj_vel, pvaj_acc, pvaj_jerk, cmd.yaw,
+                                                             cmd.yaw_dot, rpy, omg, aT);
+                cmd.attitude.x = rpy(0);
+                cmd.attitude.y = rpy(1);
+                cmd.attitude.z = rpy(2);
+                cmd.angular_velocity.x = omg(0);
+                cmd.angular_velocity.y = omg(1);
+                cmd.angular_velocity.z = omg(2);
+                cmd.thrust.z = aT;
+            }
+        }
+
+        void generateTakeoffPositionCommand(mars_quadrotor_msgs::PositionCommand &pos_cmd)
+        {
+            pos_cmd.trajectory_flag = 0;
+            pos_cmd.header.stamp = ros::Time::now();
+            pos_cmd.header.frame_id = "world";
+            
+            // Target position: current XY, desired takeoff height
+            pos_cmd.position.x = robot_state_.p.x();
+            pos_cmd.position.y = robot_state_.p.y();
+            pos_cmd.position.z = initial_takeoff_z_ + cfg_.auto_takeoff_height;
+            
+            // Velocity: zero for stable takeoff
+            pos_cmd.velocity.x = 0.0;
+            pos_cmd.velocity.y = 0.0;
+            pos_cmd.velocity.z = 0.0;
+            
+            // Acceleration: zero for smooth takeoff
+            pos_cmd.acceleration.x = 0.0;
+            pos_cmd.acceleration.y = 0.0;
+            pos_cmd.acceleration.z = 0.0;
+            
+            // Jerk: zero
+            pos_cmd.jerk.x = 0.0;
+            pos_cmd.jerk.y = 0.0;
+            pos_cmd.jerk.z = 0.0;
+            
+            // Yaw: maintain current yaw
+            pos_cmd.yaw = geometry_utils::get_yaw_from_quaternion(robot_state_.q);
+            pos_cmd.yaw_dot = 0.0;
+            pos_cmd.trajectory_flag = 1; // Normal trajectory
+            
+            // Calculate attitude and angular velocity
+            Vec3f pvaj_pos(pos_cmd.position.x, pos_cmd.position.y, pos_cmd.position.z);
+            Vec3f pvaj_vel(pos_cmd.velocity.x, pos_cmd.velocity.y, pos_cmd.velocity.z);
+            Vec3f pvaj_acc(pos_cmd.acceleration.x, pos_cmd.acceleration.y, pos_cmd.acceleration.z);
+            Vec3f pvaj_jerk(pos_cmd.jerk.x, pos_cmd.jerk.y, pos_cmd.jerk.z);
+            
+            Vec3f rpy, omg;
+            double aT;
+            geometry_utils::convertFlatOutputToAttAndOmg(pvaj_pos, pvaj_vel, pvaj_acc, pvaj_jerk, pos_cmd.yaw,
+                                                         pos_cmd.yaw_dot, rpy, omg, aT);
+            pos_cmd.attitude.x = rpy(0);
+            pos_cmd.attitude.y = rpy(1);
+            pos_cmd.attitude.z = rpy(2);
+            pos_cmd.angular_velocity.x = omg(0);
+            pos_cmd.angular_velocity.y = omg(1);
+            pos_cmd.angular_velocity.z = omg(2);
+            pos_cmd.thrust.z = aT;
+            
+            // Set PID gains
+            pos_cmd.kx[0] = 5.7;
+            pos_cmd.kx[1] = 5.7;
+            pos_cmd.kx[2] = 4.2;
+            pos_cmd.kv[0] = 3.4;
+            pos_cmd.kv[1] = 3.4;
+            pos_cmd.kv[2] = 4.0;
+        }
+
     public:
         FsmRos1() = default;
 
@@ -321,7 +483,7 @@ namespace fsm {
             getOnePositionCommand(pid_cmd_, traj_finish_);
             if (traj_finish_) {
                 cout << GREEN << " -- [Fsm] Traj finish." << RESET << endl;
-                if (closeToGoal(0.1)) {
+                if (closeToGoal(cfg_.goal_reach_threshold)) {
                     ChangeState("getPoseFromTraj", WAIT_GOAL);
                 } else {
                     ChangeState("getPoseFromTraj", GENERATE_TRAJ);
@@ -437,7 +599,7 @@ namespace fsm {
 
             if (traj_finish_) {
                 cout << GREEN << " -- [Fsm] Traj finish." << RESET << endl;
-                if (closeToGoal(0.1)) {
+                if (closeToGoal(cfg_.goal_reach_threshold)) {
                     ChangeState("PubCmdCallback", WAIT_GOAL);
                 } else {
                     ChangeState("PubCmdCallback", GENERATE_TRAJ);

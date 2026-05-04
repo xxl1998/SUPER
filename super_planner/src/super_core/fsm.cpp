@@ -111,13 +111,89 @@ namespace fsm {
 
         switch (machine_state_) {
             case INIT: {
-                if (!started_) {
-                    return;
-                }
                 if ((!robot_state_.rcv || (ros_ptr_->getSimTime() - robot_state_.rcv_time) > 0.1)) {
                     cout << YELLOW << " -- [Fsm] No odom." << RESET << endl;
+                    return;
                 }
-                ChangeState("MainFsmCallback", WAIT_GOAL);
+
+                // Check if auto takeoff is needed (regardless of started_ status)
+                if (isRobotBelowVirtualGround())
+                {
+                    fmt::print(fg(fmt::color::yellow), " -- [Fsm] Robot below virtual ground (z={:.2f}), triggering auto takeoff to height {:.2f}m.\n",
+                            robot_state_.p.z(), cfg_.auto_takeoff_height);
+                    auto_takeoff_triggered_ = true;
+                    auto_takeoff_start_time_ = ros_ptr_->getSimTime();
+                    takeoff_status_ = TAKEOFF_IN_PROGRESS;
+                    ChangeState("MainFsmCallback", AUTO_TAKEOFF);
+                }
+                else if (started_)
+                {
+                    ChangeState("MainFsmCallback", WAIT_GOAL);
+                }
+                break;
+            }
+            case AUTO_TAKEOFF:
+            {
+                // Check if robot has reached desired takeoff height
+                double height_diff = std::abs(robot_state_.p.z() - cfg_.auto_takeoff_height);
+                double takeoff_duration = ros_ptr_->getSimTime() - auto_takeoff_start_time_;
+
+                // Additional checks for takeoff success
+                bool height_reached = height_diff < 0.1;
+                bool position_stable = robot_state_.p.z() > (cfg_.auto_takeoff_height - 0.2); // Within reasonable range
+                // TODO: 60 seconds after MPC node online
+                bool timeout_reached = takeoff_duration > 300.0;
+
+                // Safety checks
+                bool position_reasonable = robot_state_.p.z() > -1.0 && robot_state_.p.z() < 10.0; // Reasonable height range
+                bool velocity_reasonable = robot_state_.v.norm() < 5.0; // Reasonable velocity limit
+                
+                if (!position_reasonable || !velocity_reasonable)
+                {
+                    // Emergency stop if position or velocity is unreasonable
+                    takeoff_status_ = TAKEOFF_FAILED_UNSTABLE;
+                    auto_takeoff_triggered_ = false;
+                    fmt::print(fg(fmt::color::red), " -- [Fsm] Auto takeoff EMERGENCY STOP: unreasonable state! Height: {:.2f}m, velocity: {:.2f}m/s.\n", 
+                            robot_state_.p.z(), robot_state_.v.norm());
+                    ChangeState("MainFsmCallback", EMER_STOP);
+                    break;
+                }
+
+                if ((height_reached && position_stable) || timeout_reached)
+                {
+                    auto_takeoff_triggered_ = false;
+                    
+                    if (timeout_reached && !height_reached)
+                    {
+                        // Takeoff failed due to timeout
+                        takeoff_status_ = TAKEOFF_FAILED_TIMEOUT;
+                        fmt::print(fg(fmt::color::red), " -- [Fsm] Auto takeoff FAILED: timeout after {:.1f}s. Current height: {:.2f}m, target: {:.2f}m.\n", 
+                                takeoff_duration, robot_state_.p.z(), cfg_.auto_takeoff_height);
+                        fmt::print(fg(fmt::color::yellow), " -- [Fsm] Switching to manual mode. Please check drone status.\n");
+                    }
+                    else
+                    {
+                        // Successful takeoff
+                        takeoff_status_ = TAKEOFF_SUCCESS;
+                        fmt::print(fg(fmt::color::green), " -- [Fsm] Auto takeoff SUCCESS: height {:.2f}m reached in {:.1f}s, velocity: {:.2f}m/s.\n", 
+                                robot_state_.p.z(), takeoff_duration, robot_state_.v.norm());
+                    }
+                    
+                    started_ = true; // Mark as started after takeoff attempt
+                    ChangeState("MainFsmCallback", WAIT_GOAL);
+                }
+                else
+                {
+                    // Continue publishing takeoff command with status feedback
+                    static double last_status_print = 0.0;
+                    if (takeoff_duration - last_status_print > 1.0) // Print status every second
+                    {
+                        last_status_print = takeoff_duration;
+                        fmt::print(fg(fmt::color::cyan), " -- [Fsm] Takeoff progress: height {:.2f}m/{:.2f}m, velocity {:.2f}m/s, time {:.1f}s\n", 
+                                robot_state_.p.z(), cfg_.auto_takeoff_height, robot_state_.v.norm(), takeoff_duration);
+                    }
+                    publishAutoTakeoffCommand();
+                }
                 break;
             }
             case WAIT_GOAL: {
@@ -130,7 +206,7 @@ namespace fsm {
                 break;
             }
             case GENERATE_TRAJ: {
-                if (closeToGoal(0.1)) {
+                if (closeToGoal(cfg_.goal_reach_threshold)) {
                     ChangeState("MainFsmCallback", WAIT_GOAL);
                     gi_.new_goal = false;
                     finish_plan = true;
@@ -226,5 +302,26 @@ namespace fsm {
         fmt::print(fg(fmt::color::green), " -- [Fsm]: [{}] change state from [{}] to [{}].\n", call_func,
                    MACHINE_STATE_STR[int(machine_state_)], MACHINE_STATE_STR[int(new_state)]);
         machine_state_ = new_state;
+    }
+
+    bool Fsm::isRobotBelowVirtualGround()
+    {
+        if (!cfg_.auto_takeoff_enable)
+        {
+            return false;
+        }
+
+        // Get virtual ground height from ROG map configuration
+        if (!planner_ptr_ || !planner_ptr_->getMap())
+        {
+            return false;
+        }
+
+        const auto &rog_map_cfg = planner_ptr_->getMap()->getMapConfig();
+        double virtual_ground_height = rog_map_cfg.virtual_ground_height;
+
+        // Check if robot is below virtual ground threshold
+        double height_diff = robot_state_.p.z() - virtual_ground_height;
+        return height_diff < cfg_.auto_takeoff_threshold;
     }
 }

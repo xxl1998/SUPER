@@ -8,6 +8,18 @@ fsm:
   mpc_cmd_topic: "/planning_cmd/mpc"
   poly_cmd_topic: "/planning_cmd/poly_traj"
   timer_en: true
+  # Auto takeoff configuration
+  auto_takeoff_enable: true
+  auto_takeoff_height: 1.5
+  auto_takeoff_threshold: 0.2 # Distance below virtual ground to trigger takeoff
+  auto_takeoff_duration: 2.0  # 起飞时间（秒）
+  auto_takeoff_max_velocity: 2.0  # 起飞最大速度（m/s）
+  # MPC configuration
+  mpc_horizon: 10
+  mpc_dt: 0.01
+  mpc_mode: 1 # 1 for PVAJ mode, 2 for PolynomialTrajectory mode
+  # Goal reaching threshold (meters)
+  goal_reach_threshold: 0.4
 
 super_planner:
   backup_traj_en: true
