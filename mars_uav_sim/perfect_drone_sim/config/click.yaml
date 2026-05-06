@@ -6,6 +6,8 @@ init_position:
   y: 0
   z: 1.5
 init_yaw: 1.5741
+# position_cmd_topic: "/planning/pos_cmd"
+body_rate_cmd_topic: "/mavros/setpoint_raw/attitude"
 
 #############|For LiDAR perception simulation |#################################
 is_360lidar: true

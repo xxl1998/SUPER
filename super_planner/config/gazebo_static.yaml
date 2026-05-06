@@ -53,7 +53,7 @@ traj_opt:
     print_optimizer_log: false
 
   boundary:
-    max_vel: 5.0
+    max_vel: 3.0
     max_acc: 5.0
     max_jerk: 20.0
     max_omg: 1.5
@@ -126,7 +126,7 @@ rog_map:
   inflation_step: 3
   unk_inflation_en: false
   unk_inflation_step: 1
-  map_size: [ 15,110,6 ]
+  map_size: [ 50,50,6 ]
   # If the map rolling is disable, the map origin [m] should be set.
   fix_map_origin: [ 0,0,1.5 ]
   frontier_extraction_en: false
