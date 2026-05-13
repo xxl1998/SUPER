@@ -13,6 +13,7 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
+#include <perfect_drone_sim/SetUavPose.h>
 
 #include <Eigen/Dense>
 #include <cstdlib>
@@ -207,6 +208,9 @@ class PerfectDrone {
         nh_.advertise<sensor_msgs::PointCloud2>("/cloud_sensor", 100);
     global_pc_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/global_pc", 100);
     vel_pub_ = nh_.advertise<visualization_msgs::Marker>("vel_text", 100);
+    set_uav_pose_srv_ =
+        nh_.advertiseService("SetUavPose", &PerfectDrone::setUavPoseCallback,
+                             this);
 
     // config of quadrotor
     so3_quadrotor::Config config;
@@ -356,6 +360,7 @@ class PerfectDrone {
   nav_msgs::Path path_;
   ros::Subscriber cmd_sub_;
   ros::Subscriber body_rate_cmd_sub_;
+  ros::ServiceServer set_uav_pose_srv_;
   ros::Publisher odom_pub_, imu_pub_, robot_pub_, pose_pub_, path_pub_,
       global_pc_pub_, local_pc_pub_, vel_pub_;
   ros::Publisher sensor_pc_pub_;
@@ -469,6 +474,24 @@ class PerfectDrone {
     // store last des_pos and des_yaw
     des_pos_ = des_pos;
     des_yaw_ = des_yaw;
+  }
+
+  bool setUavPoseCallback(perfect_drone_sim::SetUavPose::Request& req,
+                          perfect_drone_sim::SetUavPose::Response& res) {
+    const Eigen::Vector3d request_pos(req.pos_x, req.pos_y, req.pos_z);
+    const Eigen::Vector3d clamped_pos = clampPosition(request_pos);
+
+    quadrotorPtr_->setPos(clamped_pos);
+    // setYpr expects [yaw, pitch, roll]
+    quadrotorPtr_->setYpr(Eigen::Vector3d(req.yaw, req.pitch, req.roll));
+
+    position_ = clamped_pos;
+    q_ = uav_utils::ypr_to_quaternion(Eigen::Vector3d(req.yaw, req.pitch, req.roll));
+    des_pos_ = clamped_pos;
+    des_yaw_ = req.yaw;
+
+    res.success = true;
+    return true;
   }
 
   void quadrotor_timer_callback(const ros::TimerEvent& event) {

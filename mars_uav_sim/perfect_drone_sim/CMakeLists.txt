@@ -20,13 +20,24 @@ find_package(catkin REQUIRED COMPONENTS
         message_filters
         marsim_render
         )
+
+add_service_files(
+        FILES
+        SetUavPose.srv
+)
+
+generate_messages(
+        DEPENDENCIES
+        std_msgs
+)
+
 find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
 find_package(OpenCV REQUIRED)
 catkin_package(
         INCLUDE_DIRS include
         LIBRARIES
-        CATKIN_DEPENDS roscpp rospy std_msgs
+        CATKIN_DEPENDS roscpp rospy std_msgs message_runtime
         #  DEPENDS system_lib
 )
 
@@ -60,6 +71,7 @@ target_link_libraries(so3_quadrotor_sim
   ${THIRD_PARTY}
 )
 add_dependencies(so3_quadrotor_sim
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS}
   mars_quadrotor_msgs_generate_messages_cpp
 )
