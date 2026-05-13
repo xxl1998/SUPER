@@ -3,17 +3,23 @@ pcd_name: "random_map_2_26609.pcd"
 mesh_resource: "package://perfect_drone_sim/meshes/yunque-M.dae"
 init_position:
   x: 0
-  y: -50
-  z: 1.5
-init_yaw: 1.5741
+  y: 0
+  z: 0.1
+init_yaw: 0
 # position_cmd_topic: "/planning/pos_cmd"
 body_rate_cmd_topic: "/mavros/setpoint_raw/attitude"
+x_min: -60
+x_max: 60
+y_min: -60
+y_max: 60
+z_min: 0
+z_max: 5
 
 #############|For LiDAR perception simulation |#################################
 is_360lidar: true
 polar_resolution: 0.4
 downsample_res: 0.1
-vertical_fov: 178.0
+vertical_fov: 90.0
 sensing_blind: 0.1
 sensing_horizon: 15
 sensing_rate: 10

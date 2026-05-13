@@ -41,6 +41,12 @@ using std::endl;
 using std::string;
 using std::vector;
 
+inline double clampScalar(const double value, const double min_value,
+                          const double max_value) {
+  return value < min_value ? min_value
+                           : (value > max_value ? max_value : value);
+}
+
 class SimulatorConfig {
  public:
   std::string mesh_resource;
@@ -49,6 +55,12 @@ class SimulatorConfig {
   Eigen::Vector3d init_pos;
   double init_yaw;
   double sensing_rate;
+  double x_min;
+  double x_max;
+  double y_min;
+  double y_max;
+  double z_min;
+  double z_max;
 
   SimulatorConfig() = default;
 
@@ -65,6 +77,12 @@ class SimulatorConfig {
     loader.LoadParam("init_position/z", init_pos.z(), 1.5);
     loader.LoadParam("init_yaw", init_yaw, 0.0);
     loader.LoadParam("sensing_rate", sensing_rate, 10.0);
+    loader.LoadParam("x_min", x_min, -1e9);
+    loader.LoadParam("x_max", x_max, 1e9);
+    loader.LoadParam("y_min", y_min, -1e9);
+    loader.LoadParam("y_max", y_max, 1e9);
+    loader.LoadParam("z_min", z_min, -1e9);
+    loader.LoadParam("z_max", z_max, 1e9);
   }
 };
 
@@ -220,7 +238,7 @@ class PerfectDrone {
 
     // quadrotor init
     quadrotorPtr_ = std::make_shared<so3_quadrotor::Quadrotor>(config);
-    quadrotorPtr_->setPos(simu_cfg_.init_pos);
+    quadrotorPtr_->setPos(clampPosition(simu_cfg_.init_pos));
     quadrotorPtr_->setYpr(Eigen::Vector3d(simu_cfg_.init_yaw, 0, 0));
     double rpm = sqrt(config.mass * config.g / 4 / config.kf);
     quadrotorPtr_->setRpm(Eigen::Vector4d(rpm, rpm, rpm, rpm));
@@ -242,12 +260,12 @@ class PerfectDrone {
 
     // controller init
     // init target position and yaw when no command received
-    des_pos_ = simu_cfg_.init_pos;
+    des_pos_ = clampPosition(simu_cfg_.init_pos);
     des_yaw_ = simu_cfg_.init_yaw;
     so3cmd_.aux.enable_motors = true;
     so3cmd_.aux.use_external_yaw = false;
 
-    position_ = simu_cfg_.init_pos;
+    position_ = clampPosition(simu_cfg_.init_pos);
 
     mesh_resource_ = simu_cfg_.mesh_resource;
     q_ = quat;
@@ -358,6 +376,14 @@ class PerfectDrone {
   Eigen::Vector3d des_pos_;
   double des_yaw_;
 
+  Eigen::Vector3d clampPosition(const Eigen::Vector3d& pos) const {
+    Eigen::Vector3d clamped = pos;
+    clamped.x() = clampScalar(pos.x(), simu_cfg_.x_min, simu_cfg_.x_max);
+    clamped.y() = clampScalar(pos.y(), simu_cfg_.y_min, simu_cfg_.y_max);
+    clamped.z() = clampScalar(pos.z(), simu_cfg_.z_min, simu_cfg_.z_max);
+    return clamped;
+  }
+
   void so3cmd_callback(const mars_quadrotor_msgs::SO3Command& cmd_msg) {
     cmd_.force[0] = cmd_msg.force.x;
     cmd_.force[1] = cmd_msg.force.y;
@@ -412,6 +438,7 @@ class PerfectDrone {
   void cmdCallback(const mars_quadrotor_msgs::PositionCommandConstPtr& msg) {
     position_cmd_received_flag_ = true;
     Eigen::Vector3d des_pos(msg->position.x, msg->position.y, msg->position.z);
+    des_pos = clampPosition(des_pos);
     Eigen::Vector3d des_vel(msg->velocity.x, msg->velocity.y, msg->velocity.z);
     Eigen::Vector3d des_acc(msg->acceleration.x, msg->acceleration.y,
                             msg->acceleration.z);
@@ -457,7 +484,11 @@ class PerfectDrone {
     quadrotorPtr_->setInput(control_.rpm[0], control_.rpm[1], control_.rpm[2],
                             control_.rpm[3]);
     quadrotorPtr_->step(1.0 / quadrotor_cfg_.simulation_rate);
-    position_ = quadrotorPtr_->getPos();
+    const Eigen::Vector3d raw_pos = quadrotorPtr_->getPos();
+    position_ = clampPosition(raw_pos);
+    if ((position_ - raw_pos).squaredNorm() > 1e-12) {
+      quadrotorPtr_->setPos(position_);
+    }
     q_ = quadrotorPtr_->getQuat();
   }
 
