@@ -1,10 +1,10 @@
 #include <geometry_msgs/PoseStamped.h>
+#include <mars_quadrotor_msgs/PositionCommand.h>
+#include <mars_quadrotor_msgs/SO3Command.h>
 #include <mavros_msgs/AttitudeTarget.h>
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
 #include <pcl_conversions/pcl_conversions.h>
-#include <mars_quadrotor_msgs/PositionCommand.h>
-#include <mars_quadrotor_msgs/SO3Command.h>
 #include <ros/ros.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -185,6 +185,8 @@ class PerfectDrone {
     path_pub_ = nh_.advertise<nav_msgs::Path>("path", 100);
     local_pc_pub_ =
         nh_.advertise<sensor_msgs::PointCloud2>("/cloud_registered", 100);
+    sensor_pc_pub_ =
+        nh_.advertise<sensor_msgs::PointCloud2>("/cloud_sensor", 100);
     global_pc_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/global_pc", 100);
     vel_pub_ = nh_.advertise<visualization_msgs::Marker>("vel_text", 100);
 
@@ -229,7 +231,8 @@ class PerfectDrone {
     cmd_.qx = quat.x();
     cmd_.qy = quat.y();
     cmd_.qz = quat.z();
-    body_rate_cmd_.thrust = config.mass * config.g / (config.kf * config.max_rpm * config.max_rpm * 4);
+    body_rate_cmd_.thrust = config.mass * config.g /
+                            (config.kf * config.max_rpm * config.max_rpm * 4);
     body_rate_cmd_.kOm[0] = quadrotor_cfg_.gains_ang_x;
     body_rate_cmd_.kOm[1] = quadrotor_cfg_.gains_ang_y;
     body_rate_cmd_.kOm[2] = quadrotor_cfg_.gains_ang_z;
@@ -299,14 +302,34 @@ class PerfectDrone {
   void publishPC() {
     pcl::PointCloud<marsim::PointType>::Ptr local_map(
         new pcl::PointCloud<marsim::PointType>);
+    pcl::PointCloud<marsim::PointType>::Ptr sensor_pc(
+        new pcl::PointCloud<marsim::PointType>);
     render_ptr_->renderOnceInWorld(position_.cast<float>(), q_.cast<float>(),
                                    ros::Time::now().toSec(), local_map);
+
+    Eigen::Matrix3f rot(q_.cast<float>());
+    Eigen::Matrix4f sensor2world;
+    sensor2world << rot(0, 0), rot(0, 1), rot(0, 2), position_.x(),  //
+        rot(1, 0), rot(1, 1), rot(1, 2), position_.y(),              //
+        rot(2, 0), rot(2, 1), rot(2, 2), position_.z(),              //
+        0, 0, 0, 1;
+    Eigen::Matrix4f world2sensor;
+    world2sensor = sensor2world.inverse();
+    sensor_pc->points.clear();
+    pcl::transformPointCloud(*local_map, *sensor_pc, world2sensor);
+
     sensor_msgs::PointCloud2 pc_msg;
     pcl::toROSMsg(*local_map, pc_msg);
     pc_msg.header.frame_id = "world";
     pc_msg.header.stamp = ros::Time::now();
     std::cout << "Publish local map size: " << local_map->size() << std::endl;
     local_pc_pub_.publish(pc_msg);
+
+    sensor_msgs::PointCloud2 sensor_pc_msg;
+    pcl::toROSMsg(*sensor_pc, sensor_pc_msg);
+    sensor_pc_msg.header.frame_id = "perfect_drone";
+    sensor_pc_msg.header.stamp = pc_msg.header.stamp;
+    sensor_pc_pub_.publish(sensor_pc_msg);
   }
 
   ~PerfectDrone() {}
@@ -317,6 +340,7 @@ class PerfectDrone {
   ros::Subscriber body_rate_cmd_sub_;
   ros::Publisher odom_pub_, imu_pub_, robot_pub_, pose_pub_, path_pub_,
       global_pc_pub_, local_pc_pub_, vel_pub_;
+  ros::Publisher sensor_pc_pub_;
   ros::Timer odom_pub_timer_;
   ros::Timer pc_pub_timer_;
   ros::Timer global_pc_pub_timer_;
@@ -507,9 +531,16 @@ class PerfectDrone {
     imu_.angular_velocity.y = omega(1);
     imu_.angular_velocity.z = omega(2);
 
-    imu_.linear_acceleration.x = acc[0];
-    imu_.linear_acceleration.y = acc[1];
-    imu_.linear_acceleration.z = acc[2];
+    const tf::Vector3 gravity_world(0.0, 0.0, quadrotor_cfg_.g);
+    const tf::Vector3 gravity_body =
+        transform.getBasis().inverse() * gravity_world;
+    const Eigen::Vector3d imu_acc =
+        acc +
+        Eigen::Vector3d(gravity_body.x(), gravity_body.y(), gravity_body.z());
+
+    imu_.linear_acceleration.x = imu_acc.x();
+    imu_.linear_acceleration.y = imu_acc.y();
+    imu_.linear_acceleration.z = imu_acc.z();
 
     so3ControlPtr_->setAcc(acc);
 
