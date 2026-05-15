@@ -5,6 +5,7 @@
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <perfect_drone_sim/SetUavPose.h>
 #include <ros/ros.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -13,7 +14,6 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
-#include <perfect_drone_sim/SetUavPose.h>
 
 #include <Eigen/Dense>
 #include <cstdlib>
@@ -208,9 +208,8 @@ class PerfectDrone {
         nh_.advertise<sensor_msgs::PointCloud2>("/cloud_sensor", 100);
     global_pc_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/global_pc", 100);
     vel_pub_ = nh_.advertise<visualization_msgs::Marker>("vel_text", 100);
-    set_uav_pose_srv_ =
-        nh_.advertiseService("SetUavPose", &PerfectDrone::setUavPoseCallback,
-                             this);
+    set_uav_pose_srv_ = nh_.advertiseService(
+        "SetUavPose", &PerfectDrone::setUavPoseCallback, this);
 
     // config of quadrotor
     so3_quadrotor::Config config;
@@ -486,7 +485,8 @@ class PerfectDrone {
     quadrotorPtr_->setYpr(Eigen::Vector3d(req.yaw, req.pitch, req.roll));
 
     position_ = clamped_pos;
-    q_ = uav_utils::ypr_to_quaternion(Eigen::Vector3d(req.yaw, req.pitch, req.roll));
+    q_ = uav_utils::ypr_to_quaternion(
+        Eigen::Vector3d(req.yaw, req.pitch, req.roll));
     des_pos_ = clamped_pos;
     des_yaw_ = req.yaw;
 
@@ -585,12 +585,10 @@ class PerfectDrone {
     imu_.angular_velocity.y = omega(1);
     imu_.angular_velocity.z = omega(2);
 
-    const tf::Vector3 gravity_world(0.0, 0.0, quadrotor_cfg_.g);
-    const tf::Vector3 gravity_body =
-        transform.getBasis().inverse() * gravity_world;
+    const Eigen::Vector3d gravity_world(0.0, 0.0, quadrotor_cfg_.g);
+    const Eigen::Matrix3d R_body2world = quat.matrix();
     const Eigen::Vector3d imu_acc =
-        acc +
-        Eigen::Vector3d(gravity_body.x(), gravity_body.y(), gravity_body.z());
+        R_body2world.inverse() * (acc + gravity_world);
 
     imu_.linear_acceleration.x = imu_acc.x();
     imu_.linear_acceleration.y = imu_acc.y();
