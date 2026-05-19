@@ -94,7 +94,13 @@ int main(int argc, char** argv) {
     rclcpp::executors::MultiThreadedExecutor executor;
     executor.add_node(node);
     executor.spin();
-    // 等待关闭
+
+    // Deterministic shutdown order
+    executor.remove_node(node);
+    fsm_ptr.reset();
+    node.reset();
     rclcpp::shutdown();
+    std::cout << "main exit..." << std::endl;
+    fflush(stdout);
     return 0;
 }

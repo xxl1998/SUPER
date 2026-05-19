@@ -140,7 +140,7 @@ namespace path_search {
               const ros_interface::RosInterface::Ptr &ros_ptr,
               rog_map::ROGMapROS::Ptr rm);
 
-        ~Astar() {};
+        ~Astar();
 
         typedef std::shared_ptr<Astar> Ptr;
 

@@ -42,7 +42,7 @@ namespace rog_map {
 
         ProbMap() = default;
 
-        ~ProbMap() override = default;
+        ~ProbMap() override;
 
         void initProbMap();
 

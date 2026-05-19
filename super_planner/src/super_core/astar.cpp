@@ -22,6 +22,8 @@
 */
 
 #include <path_search/astar.h>
+#include <malloc.h>
+#include <iomanip>
 
 using namespace color_text;
 using namespace super_utils;
@@ -58,6 +60,27 @@ namespace path_search {
                  double dist2 = pt2.x() * pt2.x() + pt2.y() * pt2.y() + pt2.z() * pt2.z();
                  return dist1 < dist2;
              });
+    }
+
+    Astar::~Astar() {
+        size_t released_ptr_num = 0;
+        const size_t released_bytes = grid_node_buffer_.size() * sizeof(GridNode);
+        const double released_gb = static_cast<double>(released_bytes) / (1024.0 * 1024.0 * 1024.0);
+        for (auto &ptr : grid_node_buffer_) {
+            if (ptr != nullptr) {
+                delete ptr;
+                ptr = nullptr;
+                ++released_ptr_num;
+            }
+        }
+        grid_node_buffer_.clear();
+        grid_node_buffer_.shrink_to_fit();
+        malloc_trim(0);
+        cout << YELLOW
+             << " -- [A*] Destructor released " << released_ptr_num
+             << " GridNode pointers (" << released_bytes << " bytes, "
+             << std::fixed << std::setprecision(2) << released_gb << " GB)."
+             << RESET << endl;
     }
 
     RET_CODE
@@ -378,14 +401,10 @@ namespace path_search {
                 current->id_g(1) == endPtr->id_g(1) &&
                 current->id_g(2) == endPtr->id_g(2)) {
                 retrievePath(current, node_path);
-                if (start_pt_out_local_map) {
-                    rog_map::Vec3i start_idx_g;
-                    posToGlobalIndex(start_pt, start_idx_g);
-                    GridNodePtr temp_ptr(new GridNode);
-                    temp_ptr->id_g = start_idx_g;
-                    node_path.push_back(temp_ptr);
-                }
                 ConvertNodePathToPointPath(node_path, out_path);
+                if (start_pt_out_local_map) {
+                    out_path.insert(out_path.begin(), start_pt);
+                }
                 return REACH_GOAL;
             }
 

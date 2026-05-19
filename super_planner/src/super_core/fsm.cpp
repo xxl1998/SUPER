@@ -23,6 +23,7 @@
 
 #include <fsm/fsm.h>
 #include <memory>
+#include <malloc.h>
 
 using namespace super_utils;
 
@@ -81,6 +82,9 @@ namespace fsm {
         planner_ptr_->getModuleTimeConsuming(log_module_time);
         log_module_time[log_module_time.size() - 2] = replan_once_time.stop();
         // save on log
+        if( !cfg_.save_full_replan_log) {
+            replan_logs_.clear();
+        }
         replan_logs_.push_back(planner_ptr_->getLatestReplanLog());
         WriteTimeToLog();
     }
@@ -89,6 +93,13 @@ namespace fsm {
         if (stop) {
             return;
         }
+        // enable for memory optimize, but this will hurt effiency
+        // static double last_trim_t = -1.0;
+        // const double now_trim_t = ros_ptr_->getSimTime();
+        // if (last_trim_t < 0 || (now_trim_t - last_trim_t) > 1.0) {
+        //     last_trim_t = now_trim_t;
+        //     malloc_trim(0);
+        // }
         static double fsm_start_time = ros_ptr_->getSimTime();
         double cur_t = (ros_ptr_->getSimTime() - fsm_start_time);
         static double last_print_t = 0.0;
@@ -233,6 +244,9 @@ namespace fsm {
                     cout << YELLOW << " -- [Fsm] PlanFromRest failed, try replan." << RESET << endl;
                     // ros::Duration(0.1).sleep();
                 }
+                if( !cfg_.save_full_replan_log) {
+                    replan_logs_.clear();
+                }
                 replan_logs_.push_back(planner_ptr_->getLatestReplanLog());
                 break;
             }
@@ -265,8 +279,8 @@ namespace fsm {
         }
 
         if((click_point - gi_.goal_p).norm() < cfg_.goal_reach_threshold) {
-            cout << GREEN << " -- [Fsm] Ignore target goal at: " << click_point.transpose()
-                << " current goal: " << gi_.goal_p.transpose() << RESET << endl;
+            // cout << GREEN << " -- [Fsm] Ignore target goal at: " << click_point.transpose()
+            //     << " current goal: " << gi_.goal_p.transpose() << RESET << endl;
             return;
         }
 

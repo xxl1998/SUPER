@@ -67,6 +67,8 @@ namespace fsm {
         // Goal reaching threshold
         double goal_reach_threshold{};
 
+        bool save_full_replan_log{};
+
         Config() = default;
 
         Config(const std::string & cfg_path) {
@@ -102,6 +104,7 @@ namespace fsm {
             loader.LoadParam("super_planner/visualization_en", visualization_en, false, true);
             loader.LoadParam("rog_map/resolution", resolution, 0.1, true);
 
+            loader.LoadParam("fsm/save_full_replan_log", save_full_replan_log, false);
         }
     };
 }

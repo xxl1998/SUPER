@@ -415,10 +415,25 @@ namespace fsm {
     public:
         FsmRos1() = default;
 
-        ~FsmRos1(){
-            ros::shutdown();
-            saveReplanLogToFile("super_latest_log");
-            exit(0);
+        ~FsmRos1() {
+            try {
+                stop = true;
+                // Ensure ROS timers are stopped/destroyed while ROS internals are still valid.
+                if (execution_timer_.hasStarted()) execution_timer_.stop();
+                if (replan_timer_.hasStarted()) replan_timer_.stop();
+                if (cmd_timer_.hasStarted()) cmd_timer_.stop();
+
+                saveReplanLogToFile("super_latest_log");
+
+                // Release heavy modules explicitly so destructor logs can flush deterministically.
+                planner_ptr_.reset();
+                map_ptr_.reset();
+                ros_ptr_.reset();
+            } catch (const std::exception &e) {
+                std::cerr << "[FsmRos1::~FsmRos1] exception: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "[FsmRos1::~FsmRos1] unknown exception" << std::endl;
+            }
         };
 
         typedef std::shared_ptr<FsmRos1> Ptr;

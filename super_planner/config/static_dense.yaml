@@ -21,6 +21,7 @@ fsm:
   mpc_mode: 1 # 1 for PVAJ mode, 2 for PolynomialTrajectory mode
   # Goal reaching threshold (meters)
   goal_reach_threshold: 0.4
+  save_full_replan_log: false
 
 super_planner:
   backup_traj_en: true

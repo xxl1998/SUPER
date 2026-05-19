@@ -8,10 +8,16 @@ add_compile_options(-Werror=return-type)
 add_compile_options(-Werror=unused-variable)
 add_compile_options(-Werror=unused-but-set-variable)
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
+
+# generate compile_commands.json for VS Code
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Define the voxelize and raycasting method
 add_definitions(-DORIGIN_AT_CORNER)
 add_definitions(-DFMT_HEADER_ONLY)
+# backward-cpp: enable DWARF-based symbol resolution (file:line)
+add_definitions(-DBACKWARD_HAS_DW=1)
 add_definitions(-DROOT_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/\")
 
 

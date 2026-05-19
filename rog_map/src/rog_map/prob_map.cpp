@@ -22,8 +22,51 @@
 */
 
 #include <rog_map/prob_map.h>
+#include <iomanip>
 using namespace rog_map;
 using namespace super_utils;
+
+ProbMap::~ProbMap() {
+    const size_t occupancy_bytes = occupancy_buffer_.capacity() * sizeof(float);
+    const size_t op_cnt_bytes = raycast_data_.operation_cnt.capacity() * sizeof(uint16_t);
+    const size_t hit_cnt_bytes = raycast_data_.hit_cnt.capacity() * sizeof(uint16_t);
+    const size_t time_bytes = time_consuming_.capacity() * sizeof(double);
+    const size_t total_bytes = occupancy_bytes + op_cnt_bytes + hit_cnt_bytes + time_bytes;
+    const double total_gb = static_cast<double>(total_bytes) / (1024.0 * 1024.0 * 1024.0);
+
+    size_t released_ptr_num = 0;
+    if (inf_map_) {
+        inf_map_.reset();
+        ++released_ptr_num;
+    }
+    if (fcnt_map_) {
+        fcnt_map_.reset();
+        ++released_ptr_num;
+    }
+    if (esdf_map_) {
+        esdf_map_.reset();
+        ++released_ptr_num;
+    }
+
+    occupancy_buffer_.clear();
+    occupancy_buffer_.shrink_to_fit();
+    raycast_data_.operation_cnt.clear();
+    raycast_data_.operation_cnt.shrink_to_fit();
+    raycast_data_.hit_cnt.clear();
+    raycast_data_.hit_cnt.shrink_to_fit();
+    time_consuming_.clear();
+    time_consuming_.shrink_to_fit();
+    while (!raycast_data_.update_cache_id_g.empty()) {
+        raycast_data_.update_cache_id_g.pop();
+    }
+
+    std::cout << YELLOW
+              << " -- [ProbMap] Destructor released " << released_ptr_num
+              << " shared pointers and cleared ~" << total_bytes << " bytes of buffers ("
+              << std::fixed << std::setprecision(2) << total_gb << " GB)."
+              << RESET << std::endl;
+    fflush(stdout);
+}
 
 void ProbMap::initProbMap() {
     static bool init_once{false};

@@ -460,7 +460,29 @@ namespace fsm {
         FsmRos2() = default;
 
         ~FsmRos2() {
-            saveReplanLogToFile();
+            try {
+                // Stop and release timers/callback resources first.
+                execution_timer_.reset();
+                replan_timer_.reset();
+                cmd_timer_.reset();
+                exec_cbk_group_.reset();
+                replan_cbk_group_.reset();
+                cmd_cbk_group_.reset();
+                goal_cbk_group_.reset();
+                goal_sub_.reset();
+
+                saveReplanLogToFile();
+
+                // Explicitly release heavy modules so destructors/logs run deterministically.
+                planner_ptr_.reset();
+                map_ptr_.reset();
+                ros_ptr_.reset();
+                nh_.reset();
+            } catch (const std::exception &e) {
+                std::cerr << "[FsmRos2::~FsmRos2] exception: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "[FsmRos2::~FsmRos2] unknown exception" << std::endl;
+            }
         };
 
         typedef std::shared_ptr<FsmRos2> Ptr;

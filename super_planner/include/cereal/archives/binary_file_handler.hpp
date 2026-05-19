@@ -11,6 +11,9 @@
 #include <string>
 #include <ctime>
 #include <iomanip>
+#include <filesystem>
+#include <backward.hpp>
+
 // Use const std::string for color definitions with meaningful names
 const std::string COLOR_RESET = "\033[0m";
 const std::string COLOR_ERROR = "\033[31m";  // Red for errors
@@ -20,6 +23,16 @@ const std::string COLOR_SUCCESS = "\033[32m"; // Green for success
 template <typename T>
 class BinaryFileHandler {
 public:
+    static void printBacktrace() {
+        std::cerr << COLOR_ERROR << "Backtrace:\n" << COLOR_RESET;
+        backward::StackTrace st;
+        st.load_here(64);
+        backward::Printer p;
+        p.address = true;
+        p.object = true;
+        p.color_mode = backward::ColorMode::always;
+        p.print(st, std::cerr);
+    }
 
     static std::string getCurrentTimeStr() {
         // 获取当前时间
@@ -40,10 +53,25 @@ public:
     }
     // Static method: Save data to a binary file
     static void save(const std::string& filename, const T& data) {
+        const std::filesystem::path file_path(filename);
+        const std::filesystem::path dir_path = file_path.parent_path();
+        if (!dir_path.empty() && !std::filesystem::exists(dir_path)) {
+            std::error_code ec;
+            if (!std::filesystem::create_directories(dir_path, ec) || ec) {
+                std::cerr << COLOR_ERROR
+                          << "Error: Failed to create directory: " << dir_path.string()
+                          << " (" << ec.message() << ")\n"
+                          << COLOR_RESET;
+                printBacktrace();
+                return;
+            }
+        }
+
         std::ofstream ofs(filename, std::ios::binary);
         if (!ofs) {
             std::cerr << COLOR_ERROR << "Error: Could not open file for writing.\n"
                       << COLOR_RESET;
+            printBacktrace();
             return;
         }
         cereal::BinaryOutputArchive archive(ofs);

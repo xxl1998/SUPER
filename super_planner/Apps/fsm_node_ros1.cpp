@@ -68,6 +68,10 @@ int main(int argc, char **argv) {
     spinner.start();
     ros::Duration(1.0).sleep();
     ros::waitForShutdown();
+    spinner.stop();
+    fsm_ptr.reset();
+    ros::shutdown();
+    std::cout << "main exit..." << std::endl;
+    fflush(stdout);
     return 0;
 }
-

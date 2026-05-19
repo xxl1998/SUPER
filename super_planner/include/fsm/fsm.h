@@ -117,6 +117,9 @@ namespace fsm {
             }
 
             // save on log
+            if( !cfg_.save_full_replan_log) {
+                replan_logs_.clear();
+            }
             replan_logs_.push_back(planner_ptr_->getLatestReplanLog());
             fmt::print(fmt::fg(fmt::color::green), " -- Replan ID: {}, ret code: {}\n",
                        replan_logs_.size() - 1, replan_logs_.back().getRetCode());

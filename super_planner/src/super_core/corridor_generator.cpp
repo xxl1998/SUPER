@@ -44,6 +44,8 @@ namespace super_planner {
         virtual_ceil_height_ = virtual_ceil_height - robot_r;
         virtual_groud_height_ = virtual_groud_height + robot_r;
 //        failed_traj_log.open(DEBUG_FILE_DIR("sfc.csv"), std::ios::out | std::ios::trunc);
+        // reserve data to prevent memory fragment
+        latest_pc.reserve(100000);
     }
 
 
