@@ -1,4 +1,4 @@
-Header header
+std_msgs/Header header
 mars_quadrotor_msgs/PositionCommand[] cmds
 uint32 mpc_horizon
 uint8 command_flag

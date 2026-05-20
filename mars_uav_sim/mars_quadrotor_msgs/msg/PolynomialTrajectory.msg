@@ -1,4 +1,4 @@
-Header header
+std_msgs/Header header
 
 # the trajectory id, starts from "1".
 uint32 trajectory_id
@@ -23,13 +23,13 @@ uint32 order_yaw
 
 # the polynomial coecfficients of the trajectory.
 # The start system wall time of the yaw trajectory
-time start_WT_yaw
+float64 start_wt_yaw
 float64 yaw
 float64 yaw_rate
 float64[] coef_yaw
 float64[] time_yaw
 # The start system wall time of the pos trajectory
-time start_WT_pos
+float64 start_wt_pos
 float64[] coef_pos_x
 float64[] coef_pos_y
 float64[] coef_pos_z

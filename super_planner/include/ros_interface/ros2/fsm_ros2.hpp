@@ -96,36 +96,6 @@ namespace fsm {
                 takeoff_initialized_ = true;
             }
 
-            // Publish MAVROS position target if enabled
-            if (cfg_.mavros_pos_target_enable && mavros_pos_target_pub_)
-            {
-                mavros_msgs::msg::PositionTarget takeoff_msg;
-                ros_ptr_->getSimTime(takeoff_msg.header.stamp.sec, takeoff_msg.header.stamp.nanosec);
-                takeoff_msg.header.frame_id = "world";
-
-                // Set target position to current XY but desired takeoff height
-                takeoff_msg.position.x = robot_state_.p.x();
-                takeoff_msg.position.y = robot_state_.p.y();
-                takeoff_msg.position.z = initial_takeoff_z_ + cfg_.auto_takeoff_height;
-
-                // Set zero velocity and acceleration for stable takeoff
-                takeoff_msg.velocity.x = 0.0;
-                takeoff_msg.velocity.y = 0.0;
-                takeoff_msg.velocity.z = 0.0;
-                takeoff_msg.acceleration_or_force.x = 0.0;
-                takeoff_msg.acceleration_or_force.y = 0.0;
-                takeoff_msg.acceleration_or_force.z = 0.0;
-
-                // Set yaw to current yaw to avoid rotation during takeoff
-                takeoff_msg.yaw = geometry_utils::get_yaw_from_quaternion(robot_state_.q);
-                takeoff_msg.yaw_rate = 0.0;
-
-                // Set type mask for position control
-                takeoff_msg.type_mask = 0; // Control position, velocity, acceleration, yaw
-
-                mavros_pos_target_pub_->publish(takeoff_msg);
-            }
-
             // Always publish MPC command for smooth takeoff trajectory
             if (mpc_cmd_pub_)
             {
@@ -688,7 +658,7 @@ namespace fsm {
             cmd_pub_->publish(pid_cmd_);
             if (traj_finish_) {
                 cout << GREEN << " -- [Fsm] Traj finish." << RESET << endl;
-                if (closeToGoal(fg_.goal_reach_threshold)) {
+                if (closeToGoal(cfg_.goal_reach_threshold)) {
                     ChangeState("PubCmdCallback", WAIT_GOAL);
                 } else {
                     ChangeState("PubCmdCallback", GENERATE_TRAJ);

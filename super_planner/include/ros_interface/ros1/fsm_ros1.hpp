@@ -114,7 +114,7 @@ namespace fsm {
             heartbeat.header.frame_id = "world";
             double swt;
             planner_ptr_->getOneHeartbeatTime(swt, traj_finish);
-            heartbeat.start_WT_pos = ros::Time(swt);
+            heartbeat.start_wt_pos = swt;
         }
 
         void getCommittedTrajectory(mars_quadrotor_msgs::PolynomialTrajectory &cmd_traj) {
@@ -127,7 +127,7 @@ namespace fsm {
             const Trajectory yaw_traj = planner_ptr_->getCommittedYawTrajectory();
             planner_ptr_->unlockCommittedTraj();
 
-            cmd_traj.start_WT_pos = ros::Time(pos_traj.start_WT);
+            cmd_traj.start_wt_pos = pos_traj.start_WT;
 
             cmd_traj.piece_num_pos = pos_traj.getPieceNum();
             cmd_traj.order_pos = 7;
@@ -135,7 +135,7 @@ namespace fsm {
             cmd_traj.coef_pos_x.resize(cmd_traj.piece_num_pos * (cmd_traj.order_pos + 1));
             cmd_traj.coef_pos_y.resize(cmd_traj.piece_num_pos * (cmd_traj.order_pos + 1));
             cmd_traj.coef_pos_z.resize(cmd_traj.piece_num_pos * (cmd_traj.order_pos + 1));
-            cmd_traj.start_WT_pos = ros::Time(pos_traj.start_WT);
+            cmd_traj.start_wt_pos = pos_traj.start_WT;
 
             if (!yaw_traj.empty()) {
                 cmd_traj.type = cmd_traj.type |
@@ -150,7 +150,7 @@ namespace fsm {
                     Eigen::Map<Eigen::VectorXd>(&cmd_traj.coef_yaw[col_size * i], col_size) = yaw_coef;
                     cmd_traj.time_yaw[i] = yaw_traj[i].getDuration();
                 }
-                cmd_traj.start_WT_yaw = ros::Time(yaw_traj.start_WT);
+                cmd_traj.start_wt_yaw = yaw_traj.start_WT;
             }
 
             for (int i = 0; i < cmd_traj.piece_num_pos; i++) {

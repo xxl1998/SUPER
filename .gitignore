@@ -1,3 +1,4 @@
+package.xml
 **.DS_Store
 **/build
 **/devel
@@ -9,3 +10,4 @@
 **.bin
 **.zip
 **.ply
+
