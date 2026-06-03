@@ -1,0 +1,21 @@
+<package format="3">
+    <version>0.0.0</version>
+    <name>mission_planner</name>
+    <description>mission_planner</description>
+    <maintainer email="renyf@connect.hku.hk">Yunfan Ren</maintainer>
+    <license>BSD</license>
+    <buildtool_depend condition="$ROS_VERSION == 1">catkin</buildtool_depend>
+    <buildtool_depend condition="$ROS_VERSION == 2">ament_cmake</buildtool_depend>
+    <depend condition="$ROS_VERSION == 2">rclcpp</depend>
+    <depend condition="$ROS_VERSION == 1">roscpp</depend>
+    <depend condition="$ROS_VERSION == 1">rospy</depend>
+    <depend>sensor_msgs</depend>
+    <depend>geometry_msgs</depend>
+    <depend>nav_msgs</depend>
+    <depend>std_msgs</depend>
+    <depend>mavros_msgs</depend>
+    <depend>rog_map</depend>
+    <export>
+        <build_type condition="$ROS_VERSION == 2">ament_cmake</build_type>
+    </export>
+</package>
