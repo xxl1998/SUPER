@@ -157,6 +157,8 @@ find_package(geometry_msgs REQUIRED)
 
 # Collect message files
 set(msg_files
+        "msg/AuxCommand.msg"
+        "msg/SO3Command.msg"
         "msg/QuadrotorState.msg"
         "msg/TrackingPerformance.msg"
         "msg/PositionCommand.msg"

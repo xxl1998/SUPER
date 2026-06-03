@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.12)
 project(perfect_drone_sim)
 
 if(NOT CMAKE_C_STANDARD)
@@ -16,6 +16,9 @@ set(CMAKE_BUILD_TYPE "Release")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g -fPIC")
 add_compile_options(-DQT_NO_VERSION_TAGGING)
 add_definitions(-DROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/")
+
+# generate compile_commands.json for VS Code
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(NOT WIN32)
   string(ASCII 27 Esc)
@@ -55,6 +58,18 @@ else()
   message(FATAL_ERROR "Invalid or missing ROS_VERSION environment variable. Please source a ROS1 or ROS2 environment before configuring.")
 endif()
 
+# Record ROS distro name (e.g., 'humble', 'galactic'...)
+set(ROS_DISTRO_ENV "$ENV{ROS_DISTRO}")
+
+# supported ROS2 version: galactic, humble and higher version
+if(ROS_VERSION_ENV STREQUAL "2")
+  if(ROS_DISTRO_ENV STREQUAL "galactic")
+    message("\n${BoldGreen}ROS2 version: ${ROS_DISTRO_ENV} =galactic detected...${ColourReset}\n")
+  else()
+    message("\n${BoldGreen}ROS2 version: ${ROS_DISTRO_ENV} >galactic detected...${ColourReset}\n")
+  endif()
+endif()
+
 if(ROS_VERSION_ENV STREQUAL "1")
 
 message("\n${BoldGreen}Building for ROS1...${ColourReset}\n")
@@ -63,6 +78,7 @@ find_package(catkin REQUIRED COMPONENTS
         roscpp
         std_msgs
         pcl_ros
+        mavros_msgs
         geometry_msgs
         nav_msgs
         message_generation
@@ -90,6 +106,7 @@ catkin_package(
         INCLUDE_DIRS include
         LIBRARIES
         CATKIN_DEPENDS roscpp rospy std_msgs message_runtime
+        mavros_msgs
         #  DEPENDS system_lib
 )
 
@@ -139,9 +156,12 @@ message("\n${BoldGreen}Building for ROS2...${ColourReset}\n")
 ## ROS Related packages
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+find_package(rosidl_default_runtime REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(mavros_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(marsim_render REQUIRED)
@@ -152,6 +172,10 @@ find_package(tf2_ros REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
 find_package(OpenCV REQUIRED)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+        "srv/SetUavPose.srv"
+)
 
 
 include_directories(
@@ -174,6 +198,7 @@ set(dependencies
         marsim_render
         rclcpp
         sensor_msgs
+        mavros_msgs
         mars_quadrotor_msgs
         std_msgs
         geometry_msgs
@@ -182,20 +207,46 @@ set(dependencies
         tf2_ros
 )
 
-add_executable(perfect_drone_node
+add_executable(perfect_drone
         src/ros2_perfect_drone_node.cpp
 )
 
-ament_target_dependencies(perfect_drone_node PUBLIC
+ament_target_dependencies(perfect_drone PUBLIC
         ${dependencies}
 )
-target_link_libraries(perfect_drone_node PUBLIC
+target_link_libraries(perfect_drone PUBLIC
         ${THIRD_PARTY}
 )
 
-target_include_directories(perfect_drone_node PUBLIC
+target_include_directories(perfect_drone PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
+)
+
+add_executable(so3_quadrotor_sim
+        src/so3_quadrotor_sim.cpp
+)
+ament_target_dependencies(so3_quadrotor_sim PUBLIC
+        ${dependencies}
+)
+target_link_libraries(so3_quadrotor_sim PUBLIC
+        ${THIRD_PARTY}
+)
+# NOTE: use service or msg in same package, the CMake code is different in ROS2 galactic and humble,
+#       so we reference the CMakeLists.txt of livox_ros_driver2.
+if(ROS_DISTRO_ENV STREQUAL "galactic") # ROS2 galactic
+set(PROJECT_INTERFACE_TARGET "${PROJECT_NAME}__rosidl_typesupport_cpp")
+add_dependencies(so3_quadrotor_sim ${PROJECT_NAME})
+get_target_property(PROJECT_INTERFACES_INCLUDE_DIRECTORIES ${PROJECT_INTERFACE_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
+else() # ROS2 >= humble
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(so3_quadrotor_sim "${cpp_typesupport_target}")
+endif()
+target_include_directories(so3_quadrotor_sim PUBLIC
+        ${PROJECT_INTERFACES_INCLUDE_DIRECTORIES}
+)
+target_link_libraries(so3_quadrotor_sim PUBLIC
+        ${PROJECT_INTERFACE_TARGET}
 )
 
 # 注册 导出头文件
@@ -206,14 +257,19 @@ install(
 
 # 注册 导出库文件
 install(
-        TARGETS perfect_drone_node # 告诉ros2有这么个目标（可执行文件或者库）
-        EXPORT perfect_drone_node
+        TARGETS
+        perfect_drone
+        so3_quadrotor_sim
+        EXPORT
+        perfect_drone
         ARCHIVE DESTINATION lib
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin
         INCLUDES DESTINATION include
         RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
+
+ament_export_dependencies(rosidl_default_runtime)
 # install the launch file
 install(DIRECTORY
         launch
