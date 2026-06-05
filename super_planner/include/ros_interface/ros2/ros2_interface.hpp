@@ -116,8 +116,8 @@ namespace ros_interface {
             if (exp_traj_pub_->get_subscription_count() <= 0) {
                 return;
             }
-            Ros1Adapter::deleteAllMarkerArray(exp_traj_pub_);
             visualization_msgs::msg::MarkerArray mkr_arr;
+            Ros1Adapter::addDeleteMarkerToMarkerArray(mkr_arr);
             Ros1Adapter::addTrajectoryToMarkerArray(mkr_arr, traj, ns, Color::Green(), 0.08, true, true);
             exp_traj_pub_->publish(mkr_arr);
         }
@@ -129,8 +129,8 @@ namespace ros_interface {
             if (backup_traj_pub_->get_subscription_count() <= 0) {
                 return;
             }
-            Ros1Adapter::deleteAllMarkerArray(backup_traj_pub_);
             visualization_msgs::msg::MarkerArray mkr_arr;
+            Ros1Adapter::addDeleteMarkerToMarkerArray(mkr_arr);
             Ros1Adapter::addTrajectoryToMarkerArray(mkr_arr, traj, "backup_traj", Color::Green(), 0.08, true, false);
             backup_traj_pub_->publish(mkr_arr);
         }
@@ -139,8 +139,8 @@ namespace ros_interface {
             if (!visualization_en_) {
                 return;
             }
-            Ros1Adapter::deleteAllMarkerArray(guide_path_pub_);
             visualization_msgs::msg::MarkerArray mkr_arr;
+            Ros1Adapter::addDeleteMarkerToMarkerArray(mkr_arr);
             Ros1Adapter::addPathToMarkerArray(mkr_arr, path, Color::Pink(), "guide_path", 0.1, 0.05);
             guide_path_pub_->publish(mkr_arr);
         }
@@ -152,8 +152,8 @@ namespace ros_interface {
             if (exp_sfcs_pub_->get_subscription_count() <= 0) {
                 return;
             }
-            Ros1Adapter::deleteAllMarkerArray(exp_sfcs_pub_);
             visualization_msgs::msg::MarkerArray mkr_arr;
+            Ros1Adapter::addDeleteMarkerToMarkerArray(mkr_arr);
             int color_num = sfcs.size();
             int color_id = 0;
             for (auto p: sfcs) {
@@ -177,8 +177,8 @@ namespace ros_interface {
             if (backup_sfc_pub_->get_subscription_count() <= 0) {
                 return;
             }
-            Ros1Adapter::deleteAllMarkerArray(backup_sfc_pub_);
             visualization_msgs::msg::MarkerArray mkr_arr;
+            Ros1Adapter::addDeleteMarkerToMarkerArray(mkr_arr);
             Ros1Adapter::addPolytopeToMarkerArray(mkr_arr, sfc, "backup_sfc", false, Color::Chartreuse(),
                                                   Color::Green(),
                                                   Color::Green(),
@@ -196,9 +196,8 @@ namespace ros_interface {
                 return;
             }
 
-            Ros1Adapter::deleteAllMarkerArray(goal_pub_);
-
             visualization_msgs::msg::MarkerArray mkr_arr;
+            Ros1Adapter::addDeleteMarkerToMarkerArray(mkr_arr);
             Ros1Adapter::addPathToMarkerArray(mkr_arr, path, Color::Yellow(), "goal", 0.3, 0.15);
             goal_pub_->publish(mkr_arr);
         }
@@ -211,9 +210,8 @@ namespace ros_interface {
             if (committed_traj_pub_->get_subscription_count() <= 0) {
                 return;
             }
-            Ros1Adapter::deleteAllMarkerArray(committed_traj_pub_);
-
             visualization_msgs::msg::MarkerArray mkr_arr;
+            Ros1Adapter::addDeleteMarkerToMarkerArray(mkr_arr);
 
             double traj_dur = committed_traj.getTotalDuration();
 
@@ -228,17 +226,13 @@ namespace ros_interface {
                     error("Failed to get partial trajectory");
                     return;
                 }
-                visualization_msgs::msg::MarkerArray mkr_arr;
                 Ros1Adapter::addTrajectoryToMarkerArray(mkr_arr, exp_traj, "committed_exp", Color::SteelBlue(), 0.08,
                                                         true, false);
                 Ros1Adapter::addTrajectoryToMarkerArray(mkr_arr, backup_traj, "committed_backup", Color::Green(), 0.1,
                                                         false, false);
-                committed_traj_pub_->publish(mkr_arr);
             } else {
-                visualization_msgs::msg::MarkerArray mkr_arr;
                 Ros1Adapter::addTrajectoryToMarkerArray(mkr_arr, committed_traj, "committed_exp", Color::Green(), 0.1,
                                                         true, false);
-                committed_traj_pub_->publish(mkr_arr);
             }
 
             committed_traj_pub_->publish(mkr_arr);
@@ -253,8 +247,8 @@ namespace ros_interface {
                 return;
             }
 
-            Ros1Adapter::deleteAllMarkerArray(yaw_traj_pub_);
             visualization_msgs::msg::MarkerArray mkr_arr;
+            Ros1Adapter::addDeleteMarkerToMarkerArray(mkr_arr);
             Ros1Adapter::addYawTrajectoryToMarkerArray(mkr_arr, pos_traj, yaw_traj);
             yaw_traj_pub_->publish(mkr_arr);
         }
@@ -305,9 +299,8 @@ namespace ros_interface {
                 return;
             }
 
-            ros_interface::Ros1Adapter::deleteAllMarkerArray(replan_log_mkr_pub_);
-
             visualization_msgs::msg::MarkerArray mkr_arr;
+            ros_interface::Ros1Adapter::addDeleteMarkerToMarkerArray(mkr_arr);
             ros_interface::Ros1Adapter::addTrajectoryToMarkerArray(mkr_arr, exp_traj, "exp_traj", Color::Orange(), 0.1,
                                                                    false, false);
             ros_interface::Ros1Adapter::addTrajectoryToMarkerArray(mkr_arr, backup_traj, "backup_traj", Color::Green(),

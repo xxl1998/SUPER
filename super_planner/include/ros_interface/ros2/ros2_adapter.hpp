@@ -72,6 +72,18 @@ namespace ros_interface {
             pub_->publish(del);
         }
 
+        // NOTE:
+        // DELETEALL must be included in the same MarkerArray message as the new
+        // markers (placed first in the array). Publishing DELETEALL separately
+        // can cause stale markers to accumulate in RViz2 under high rendering
+        // load (observed in ROS2 Galactic when PointCloud2 Decay Time is large),
+        // eventually leading to duplicated markers and severe FPS degradation.
+        static void addDeleteMarkerToMarkerArray(visualization_msgs::msg::MarkerArray &mkr_arr) {
+            visualization_msgs::msg::Marker del;
+            del.action = visualization_msgs::msg::Marker::DELETEALL;
+            mkr_arr.markers.push_back(del);
+        }
+
         static void addVecPointsToPointCloud2(const vec_Vec3f &points, sensor_msgs::msg::PointCloud2 &pc2) {
             pcl::PointCloud<pcl::PointXYZ> cloud;
             for (const auto &p: points) {

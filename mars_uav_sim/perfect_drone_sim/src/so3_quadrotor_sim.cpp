@@ -352,6 +352,8 @@ class PerfectDrone : public rclcpp::Node {
     body_rate_cmd_.corrections[0] = quadrotor_cfg_.corrections_z;
     body_rate_cmd_.corrections[1] = quadrotor_cfg_.corrections_r;
     body_rate_cmd_.corrections[2] = quadrotor_cfg_.corrections_p;
+    std::cout << "hover thrust: " << std::fixed << std::setprecision(3)
+              << body_rate_cmd_.thrust << std::endl;
 
     // controller init
     // init target position and yaw when no command received
