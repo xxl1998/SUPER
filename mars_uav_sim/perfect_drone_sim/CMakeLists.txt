@@ -78,6 +78,7 @@ find_package(catkin REQUIRED COMPONENTS
         roscpp
         std_msgs
         pcl_ros
+        pcl_conversions
         mavros_msgs
         geometry_msgs
         nav_msgs
@@ -164,9 +165,11 @@ find_package(sensor_msgs REQUIRED)
 find_package(mavros_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
+find_package(pcl_conversions REQUIRED)
 find_package(marsim_render REQUIRED)
 find_package(mars_quadrotor_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 
 # Other packages
 find_package(Eigen3 REQUIRED)
@@ -204,7 +207,9 @@ set(dependencies
         geometry_msgs
         nav_msgs
         visualization_msgs
+        pcl_conversions
         tf2_ros
+        tf2_geometry_msgs
 )
 
 add_executable(perfect_drone
@@ -240,7 +245,9 @@ add_dependencies(so3_quadrotor_sim ${PROJECT_NAME})
 get_target_property(PROJECT_INTERFACES_INCLUDE_DIRECTORIES ${PROJECT_INTERFACE_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
 else() # ROS2 >= humble
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
-target_link_libraries(so3_quadrotor_sim "${cpp_typesupport_target}")
+target_link_libraries(so3_quadrotor_sim PUBLIC
+        "${cpp_typesupport_target}"
+)
 endif()
 target_include_directories(so3_quadrotor_sim PUBLIC
         ${PROJECT_INTERFACES_INCLUDE_DIRECTORIES}
