@@ -38,6 +38,7 @@
 
 #include <Eigen/Dense>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <functional>
@@ -72,6 +73,33 @@ inline double clampScalar(const double value, const double min_value,
                           const double max_value) {
   return value < min_value ? min_value
                            : (value > max_value ? max_value : value);
+}
+
+template <typename PointT>
+void normalizeUnorganizedCloudMetadata(pcl::PointCloud<PointT>& cloud,
+                                       const std::string& cloud_name) {
+  const auto point_count = cloud.points.size();
+  if (point_count == 0) {
+    if (cloud.width != 0 || cloud.height != 0) {
+      std::cout << cloud_name << " metadata reset for empty cloud: width="
+                << cloud.width << ", height=" << cloud.height << std::endl;
+    }
+    cloud.width = 0;
+    cloud.height = 0;
+    return;
+  }
+
+  const bool invalid_layout =
+      cloud.width == 0 || cloud.height == 0 ||
+      static_cast<size_t>(cloud.width) * static_cast<size_t>(cloud.height) !=
+          point_count;
+  if (invalid_layout) {
+    std::cout << cloud_name << " metadata fixed: size=" << point_count
+              << ", old width=" << cloud.width
+              << ", old height=" << cloud.height << std::endl;
+    cloud.width = static_cast<uint32_t>(point_count);
+    cloud.height = 1;
+  }
 }
 
 class SimulatorConfig {
@@ -466,6 +494,7 @@ class PerfectDrone : public rclcpp::Node {
                                    this->get_clock()->now().seconds(),
 #endif
                                    local_map);
+    normalizeUnorganizedCloudMetadata(*local_map, "local_map");
 
     Eigen::Matrix3f rot(q_.cast<float>());
     Eigen::Matrix4f sensor2world;
@@ -476,7 +505,15 @@ class PerfectDrone : public rclcpp::Node {
     Eigen::Matrix4f world2sensor;
     world2sensor = sensor2world.inverse();
     sensor_pc->points.clear();
-    pcl::transformPointCloud(*local_map, *sensor_pc, world2sensor);
+    if (local_map->empty()) {
+      std::cout << "Skip sensor cloud transform: local_map is empty"
+                << std::endl;
+      sensor_pc->width = 0;
+      sensor_pc->height = 0;
+    } else {
+      pcl::transformPointCloud(*local_map, *sensor_pc, world2sensor);
+      normalizeUnorganizedCloudMetadata(*sensor_pc, "sensor_pc");
+    }
 
 #ifdef USE_ROS1
     sensor_msgs::PointCloud2 pc_msg;
