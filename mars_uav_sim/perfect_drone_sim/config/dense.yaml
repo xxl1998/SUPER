@@ -17,7 +17,7 @@ z_max: 5
 
 #############|For LiDAR perception simulation |#################################
 is_360lidar: true
-polar_resolution: 0.4
+polar_resolution: 1.0
 downsample_res: 0.1
 vertical_fov: 90.0
 sensing_blind: 0.1
