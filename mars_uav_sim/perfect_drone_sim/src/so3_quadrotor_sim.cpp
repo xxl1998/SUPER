@@ -396,6 +396,14 @@ class PerfectDrone : public rclcpp::Node {
     q_ = quat;
     odom_.header.frame_id = "world";
     imu_.header.frame_id = "world";
+    const double odom_rate =
+        (std::isfinite(quadrotor_cfg_.odom_rate) && quadrotor_cfg_.odom_rate > 0.0)
+            ? quadrotor_cfg_.odom_rate
+            : 100.0;
+    if (odom_rate != quadrotor_cfg_.odom_rate) {
+      cout << " -- [PerfectDrone] Invalid odom_rate: "
+           << quadrotor_cfg_.odom_rate << ", fallback to " << odom_rate << endl;
+    }
 #ifdef USE_ROS1
     simulation_timer =
         nh_.createTimer(ros::Duration(1.0 / quadrotor_cfg_.simulation_rate),
@@ -403,7 +411,8 @@ class PerfectDrone : public rclcpp::Node {
     state_timer_ = nh_.createTimer(
         ros::Duration(0.1), &PerfectDrone::controller_timer_callback, this);
     odom_pub_timer_ =
-        nh_.createTimer(ros::Duration(0.01), &PerfectDrone::publishOdom, this);
+        nh_.createTimer(ros::Duration(1.0 / odom_rate),
+                        &PerfectDrone::publishOdom, this);
 
     global_pc_pub_timer_ = nh_.createTimer(
         ros::Duration(0.001), &PerfectDrone::publishGlobalPC, this);
@@ -417,9 +426,9 @@ class PerfectDrone : public rclcpp::Node {
     state_timer_ = this->create_wall_timer(
         std::chrono::duration<double>(0.1),
         std::bind(&PerfectDrone::controller_timer_callback, this));
-    odom_pub_timer_ =
-        this->create_wall_timer(std::chrono::duration<double>(0.01),
-                                std::bind(&PerfectDrone::publishOdom, this));
+    odom_pub_timer_ = this->create_wall_timer(
+        std::chrono::duration<double>(1.0 / odom_rate),
+        std::bind(&PerfectDrone::publishOdom, this));
     global_pc_pub_timer_ = this->create_wall_timer(
         std::chrono::duration<double>(0.001),
         std::bind(&PerfectDrone::publishGlobalPC, this));
