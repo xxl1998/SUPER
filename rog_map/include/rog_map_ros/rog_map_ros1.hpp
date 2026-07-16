@@ -37,6 +37,7 @@
 #ifdef USE_ROS1
 #ifndef ROG_MAP_ROS_HPP
 #define ROG_MAP_ROS_HPP
+#include <metric_monitor.hpp>
 #include <rog_map/rog_map.h>
 #include <dynamic_reconfigure/server.h>
 #include <nav_msgs/Odometry.h>
@@ -49,6 +50,7 @@ namespace rog_map {
 
     class ROGMapROS :public ROGMap {
         ros::NodeHandle nh_;
+        std::shared_ptr<metric_monitor::MetricMonitor> metric_monitor_;
 
         const double getSystemWalltimeNow() override {
             return ros::Time::now().toSec();
@@ -72,6 +74,10 @@ namespace rog_map {
         } rc_;
 
         void odomCallback(const nav_msgs::OdometryConstPtr& odom_msg) {
+            if (metric_monitor_) {
+                metric_monitor_->recordHeader("odometry", odom_msg->header.seq,
+                                              odom_msg->header.stamp.toSec());
+            }
             updateRobotState(std::make_pair(
                 Vec3f(odom_msg->pose.pose.position.x, odom_msg->pose.pose.position.y,
                       odom_msg->pose.pose.position.z),
@@ -95,6 +101,10 @@ namespace rog_map {
         }
 
         void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg) {
+            if (metric_monitor_) {
+                metric_monitor_->recordHeader("point_cloud", cloud_msg->header.seq,
+                                              cloud_msg->header.stamp.toSec());
+            }
             if (!robot_state_.rcv) {
                 return;
             }
@@ -288,7 +298,9 @@ namespace rog_map {
     public:
         typedef shared_ptr<ROGMapROS> Ptr;
 
-        ROGMapROS(const ros::NodeHandle& nh, const std::string& cfg_path) :nh_(nh){
+        ROGMapROS(const ros::NodeHandle& nh, const std::string& cfg_path,
+                  const std::shared_ptr<metric_monitor::MetricMonitor>& metric_monitor = nullptr)
+            : nh_(nh), metric_monitor_(metric_monitor) {
             cfg_ = rog_map::Config(cfg_path);
             init();
             /// Initialize visualization module

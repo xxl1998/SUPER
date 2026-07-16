@@ -29,7 +29,10 @@
 
 
 #include "fsm/fsm.h"
+#include <metric_monitor.hpp>
 
+#include <chrono>
+#include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <ros_interface/ros2/ros2_interface.hpp>
 #include <utils/geometry/geometry_utils.h>
@@ -53,6 +56,8 @@ namespace fsm {
 
         rclcpp::TimerBase::SharedPtr execution_timer_, replan_timer_, cmd_timer_;
         rclcpp::CallbackGroup::SharedPtr exec_cbk_group_, replan_cbk_group_, cmd_cbk_group_, goal_cbk_group_;
+
+        std::shared_ptr<metric_monitor::MetricMonitor> metric_monitor_;
 
         mars_quadrotor_msgs::msg::PositionCommand pid_cmd_;
         mars_quadrotor_msgs::msg::MpcPositionCommand mpc_cmd_;
@@ -552,7 +557,8 @@ namespace fsm {
             setGoalPosiAndYaw(goal_p, goal_q);
         }
 
-        void init(const rclcpp::Node::SharedPtr nh, const std::string &cfg_path) {
+        void init(const rclcpp::Node::SharedPtr nh, const std::string &cfg_path,
+                  const std::shared_ptr<metric_monitor::MetricMonitor> &metric_monitor) {
             // TODO: The current implementation uses a lenient QoS configuration for message transmission.
             const rclcpp::QoS qos(rclcpp::QoS(1)
                                           .best_effort()
@@ -561,8 +567,9 @@ namespace fsm {
 
             // 初始化参数读取
             nh_ = nh;
+            metric_monitor_ = metric_monitor;
             cfg_ = Config(cfg_path);
-            map_ptr_ = std::make_shared<rog_map::ROGMapROS>(nh_, cfg_path);
+            map_ptr_ = std::make_shared<rog_map::ROGMapROS>(nh_, cfg_path, metric_monitor_);
             // 初始化Planner
             ros_ptr_ = std::make_shared<ros_interface::Ros2Interface>(nh_);
             planner_ptr_ = std::make_shared<SuperPlanner>(cfg_path, ros_ptr_, map_ptr_);
@@ -611,7 +618,7 @@ namespace fsm {
                 replan_timer_ = nh_->create_wall_timer(
                         std::chrono::milliseconds(replan_ratems),
                         std::bind(&FsmRos2::replanTimerCallback, this),
-                        exec_cbk_group_
+                        replan_cbk_group_
                 );
             }
 
@@ -667,11 +674,23 @@ namespace fsm {
         }
 
         void replanTimerCallback() {
+            const auto start = std::chrono::steady_clock::now();
             callReplanOnce();
+            if (metric_monitor_) {
+                const double duration_sec = std::chrono::duration<double>(
+                        std::chrono::steady_clock::now() - start).count();
+                metric_monitor_->recordCost("super_replan_time_cost_sec", duration_sec);
+            }
         }
 
         void mainFsmTimerCallback() {
+            const auto start = std::chrono::steady_clock::now();
             callMainFsmOnce();
+            if (metric_monitor_) {
+                const double duration_sec = std::chrono::duration<double>(
+                        std::chrono::steady_clock::now() - start).count();
+                metric_monitor_->recordCost("super_time_cost_sec", duration_sec);
+            }
         }
 
     };

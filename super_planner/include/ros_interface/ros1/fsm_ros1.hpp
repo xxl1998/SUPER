@@ -28,7 +28,10 @@
 #define SRC_FSM_ROS1_HPP
 
 #include "fsm/fsm.h"
+#include <metric_monitor.hpp>
 
+#include <chrono>
+#include <memory>
 #include "ros/ros.h"
 #include <utils/geometry/geometry_utils.h>
 #include "geometry_msgs/PoseStamped.h"
@@ -46,6 +49,7 @@ namespace fsm {
         ros::Publisher cmd_pub, mpc_cmd_pub_, path_pub_, goal_pub_;
         ros::Publisher poly_cmd_pub_;
         ros::Timer execution_timer_, replan_timer_, cmd_timer_;
+        std::shared_ptr<metric_monitor::MetricMonitor> metric_monitor_;
         mars_quadrotor_msgs::PositionCommand pid_cmd_;
         mars_quadrotor_msgs::MpcPositionCommand mpc_cmd_;
         rog_map::ROGMapROS::Ptr map_ptr_;
@@ -529,11 +533,13 @@ namespace fsm {
             setGoalPosiAndYaw(goal_p, goal_q);
         }
 
-        void init(const ros::NodeHandle &nh, const std::string &cfg_path) {
+        void init(const ros::NodeHandle &nh, const std::string &cfg_path,
+                  const std::shared_ptr<metric_monitor::MetricMonitor> &metric_monitor) {
             // 初始化参数读取
             nh_ = nh;
+            metric_monitor_ = metric_monitor;
             cfg_ = Config(cfg_path);
-            map_ptr_ = std::make_shared<rog_map::ROGMapROS>(nh, cfg_path);
+            map_ptr_ = std::make_shared<rog_map::ROGMapROS>(nh, cfg_path, metric_monitor_);
             // 初始化Planner
             ros_ptr_ = std::make_shared<ros_interface::Ros1Interface>(nh_);
             planner_ptr_ = std::make_shared<SuperPlanner>(cfg_path, ros_ptr_, map_ptr_);
@@ -623,11 +629,23 @@ namespace fsm {
         }
 
         void replanTimerCallback(const ros::TimerEvent &event) {
+            const auto start = std::chrono::steady_clock::now();
             callReplanOnce();
+            if (metric_monitor_) {
+                const double duration_sec = std::chrono::duration<double>(
+                        std::chrono::steady_clock::now() - start).count();
+                metric_monitor_->recordCost("super_replan_time_cost_sec", duration_sec);
+            }
         }
 
         void mainFsmTimerCallback(const ros::TimerEvent &event) {
+            const auto start = std::chrono::steady_clock::now();
             callMainFsmOnce();
+            if (metric_monitor_) {
+                const double duration_sec = std::chrono::duration<double>(
+                        std::chrono::steady_clock::now() - start).count();
+                metric_monitor_->recordCost("super_time_cost_sec", duration_sec);
+            }
         }
 
     };

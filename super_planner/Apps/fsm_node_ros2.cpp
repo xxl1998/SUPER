@@ -24,6 +24,7 @@
 
 
 #include <ros_interface/ros2/fsm_ros2.hpp>
+#include <metric_monitor.hpp>
 
 /*
  * Test code:
@@ -85,7 +86,26 @@ int main(int argc, char** argv) {
     node->declare_parameter("config_name", cfg_path);
     node->get_parameter("config_name", cfg_path);
     cfg_path = CONFIG_FILE_DIR(cfg_path);
-    fsm_ptr->init(node,cfg_path);
+
+    metric_monitor::MetricMonitorConfig metric_config;
+    metric_config.module_name = "super_planner";
+    metric_config.log_directory = std::string(ROOT_DIR) + "log/metric_monitor";
+    metric_config.snapshot_directory = "/tmp";
+    metric_config.process_interval_sec = 0.02;
+    metric_config.metrics_csv_write_interval_sec = 0.5;
+    metric_config.tmp_snapshot_write_interval_sec = 0.5;
+    metric_config.statistics_window_sec = 2.0;
+    metric_config.no_data_timeout_sec = 5.0;
+    metric_config.data_lost_timeout_sec = 0.2;
+    auto metric_monitor =
+            std::make_shared<metric_monitor::MetricMonitor>(metric_config);
+    metric_monitor->registerHeaderMetric("odometry", 0.1, 0.15, 9.0, 8.0);
+    metric_monitor->registerHeaderMetric("point_cloud", 0.15, 0.2, 9.0, 8.0);
+    metric_monitor->registerCostMetric("super_time_cost_sec", 0.009, 0.010);
+    metric_monitor->registerCostMetric("super_replan_time_cost_sec", 0.060, 0.066);
+    metric_monitor->start();
+
+    fsm_ptr->init(node, cfg_path, metric_monitor);
 
     // 打印启动信息（ROS2风格）
     RCLCPP_INFO(node->get_logger(), "\033[32m -- [Fsm-Test] Begin.\033[0m");
@@ -98,6 +118,8 @@ int main(int argc, char** argv) {
     // Deterministic shutdown order
     executor.remove_node(node);
     fsm_ptr.reset();
+    metric_monitor->stop();
+    metric_monitor.reset();
     node.reset();
     rclcpp::shutdown();
     std::cout << "main exit..." << std::endl;

@@ -38,6 +38,8 @@
 #ifndef ROG_MAP_ROS_HPP
 #define ROG_MAP_ROS_HPP
 
+#include <atomic>
+#include <metric_monitor.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
@@ -54,6 +56,9 @@ namespace rog_map {
     class ROGMapROS : public ROGMap {
         rclcpp::Node::SharedPtr nh_;
         std::shared_ptr<tf2_ros::TransformBroadcaster> br_map_ego_;
+        std::shared_ptr<metric_monitor::MetricMonitor> metric_monitor_;
+        std::atomic<std::uint64_t> odometry_metric_seq_{0};
+        std::atomic<std::uint64_t> point_cloud_metric_seq_{0};
 
 
         const double getSystemWalltimeNow() override {
@@ -85,6 +90,11 @@ namespace rog_map {
         } rc_;
 
         void odomCallback(const nav_msgs::msg::Odometry::SharedPtr odom_msg) {
+            if (metric_monitor_) {
+                metric_monitor_->recordHeader(
+                    "odometry", odometry_metric_seq_.fetch_add(1, std::memory_order_relaxed),
+                    rclcpp::Time(odom_msg->header.stamp).seconds());
+            }
             updateRobotState(std::make_pair(Vec3f(odom_msg->pose.pose.position.x,
                                                   odom_msg->pose.pose.position.y,
                                                   odom_msg->pose.pose.position.z),
@@ -109,6 +119,11 @@ namespace rog_map {
         }
 
         void cloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr cloud_msg) {
+            if (metric_monitor_) {
+                metric_monitor_->recordHeader(
+                    "point_cloud", point_cloud_metric_seq_.fetch_add(1, std::memory_order_relaxed),
+                    rclcpp::Time(cloud_msg->header.stamp).seconds());
+            }
             if (!robot_state_.rcv) {
                 std::cout << YELLOW << " -- [ROS] No odom received, skip cloud callback." << RESET << std::endl;
                 return;
@@ -311,7 +326,9 @@ namespace rog_map {
     public:
         typedef shared_ptr<ROGMapROS> Ptr;
 
-        ROGMapROS(const rclcpp::Node::SharedPtr nh, const std::string& cfg_path): nh_(nh) {
+        ROGMapROS(const rclcpp::Node::SharedPtr nh, const std::string& cfg_path,
+                  const std::shared_ptr<metric_monitor::MetricMonitor>& metric_monitor = nullptr)
+            : nh_(nh), metric_monitor_(metric_monitor) {
             // TODO: The current implementation uses a lenient QoS configuration for message transmission.
             const rclcpp::QoS qos(rclcpp::QoS(1)
                                   .best_effort()
