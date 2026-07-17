@@ -623,6 +623,8 @@ namespace fsm {
                 if (closeToGoal(cfg_.goal_reach_threshold)) {
                     ChangeState("PubCmdCallback", WAIT_GOAL);
                 } else {
+                    // The commanded trajectory has expired, but odometry is still outside the goal threshold.
+                    // Tracking lag or temporary odometry loss/jumps can therefore trigger another plan near the goal.
                     ChangeState("PubCmdCallback", GENERATE_TRAJ);
                 }
             }

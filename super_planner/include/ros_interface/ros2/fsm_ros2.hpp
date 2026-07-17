@@ -526,7 +526,7 @@ namespace fsm {
             getOnePositionCommand(pid_cmd_, traj_finish_);
             if (traj_finish_) {
                 cout << GREEN << " -- [Fsm] Traj finish." << RESET << endl;
-                if (closeToGoal(0.1)) {
+                if (closeToGoal(cfg_.goal_reach_threshold)) {
                     ChangeState("getPoseFromTraj", WAIT_GOAL);
                 } else {
                     ChangeState("getPoseFromTraj", GENERATE_TRAJ);
@@ -668,6 +668,8 @@ namespace fsm {
                 if (closeToGoal(cfg_.goal_reach_threshold)) {
                     ChangeState("PubCmdCallback", WAIT_GOAL);
                 } else {
+                    // The commanded trajectory has expired, but odometry is still outside the goal threshold.
+                    // Tracking lag or temporary odometry loss/jumps can therefore trigger another plan near the goal.
                     ChangeState("PubCmdCallback", GENERATE_TRAJ);
                 }
             }
